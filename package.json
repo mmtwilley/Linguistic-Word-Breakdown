@@ -1,0 +1,17 @@
+{
+  "name": "lingua-word-breakdown",
+  "version": "1.0.0",
+  "description": "Chrome extension for linguistic word breakdown",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --testPathPattern=tests/"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {}
+  }
+}

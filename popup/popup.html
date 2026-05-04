@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lingua Word Breakdown</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- Main View -->
+    <div id="main-view">
+      <header class="header">
+        <h1 class="logo">Lingua</h1>
+        <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Open settings">&#9881;</button>
+      </header>
+
+      <div class="input-section">
+        <textarea id="input-text" placeholder="Paste or type text in any language&#8230;" rows="4"></textarea>
+        <div id="char-count" class="char-count">0 / 2000</div>
+        <button id="analyze-btn" type="button" class="btn-primary">Analyze</button>
+      </div>
+
+      <div id="error-banner" class="error-banner" hidden>
+        <p id="error-message" class="error-message"></p>
+        <div class="error-btns">
+          <button id="retry-btn" type="button" class="btn-secondary" hidden>Retry</button>
+          <button id="settings-link-btn" type="button" class="btn-secondary" hidden>Open Settings</button>
+        </div>
+      </div>
+
+      <div id="results" hidden>
+        <p id="translation" class="translation"></p>
+        <div id="tokens-grid" class="tokens-grid"></div>
+      </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" hidden>
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Settings View -->
+    <div id="settings-view" hidden>
+      <header class="header">
+        <h1 class="logo">Settings</h1>
+        <button id="cancel-btn" class="icon-btn" title="Close" aria-label="Close settings">&#10005;</button>
+      </header>
+      <div class="settings-section">
+        <label for="api-key-input" class="settings-label">Anthropic API Key</label>
+        <input type="password" id="api-key-input" class="api-key-input" placeholder="sk-ant-&#8230;" autocomplete="off" spellcheck="false">
+        <p class="hint">Stored locally in your browser. Never shared with anyone except Anthropic.</p>
+        <div id="settings-error" class="settings-error" hidden></div>
+        <button id="save-btn" type="button" class="btn-primary">Save</button>
+      </div>
+    </div>
+
+  </div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

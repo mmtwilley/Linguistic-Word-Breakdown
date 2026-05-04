@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Lingua Word Breakdown",
+  "version": "1.0.0",
+  "description": "Translate text and get word-level linguistic analysis for language learning",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.anthropic.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Lingua Word Breakdown"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; default-src 'self'; img-src 'self' data:;"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
