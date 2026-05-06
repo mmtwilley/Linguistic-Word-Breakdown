@@ -79,7 +79,7 @@ A learner wants to look up a single word or a very short phrase to understand it
 - **FR-014**: The extension MUST validate that API responses contain all required fields (translation, tokens array with complete token objects).
 - **FR-015**: The extension MUST reject responses larger than 50 KB or with more than 500 tokens and display an error.
 - **FR-016**: The extension MUST sanitize all displayed content by inserting user-provided text via DOM `textContent` (never `innerHTML`).
-- **FR-017**: The extension MUST store the API key in `chrome.storage.local` and display it as a password field in Settings.
+- **FR-017**: The extension MUST store the API key in `chrome.storage.local` and display it as a password field in Settings. The key MUST be at least 20 characters (validated on save).
 - **FR-018**: The extension MUST send API requests only to `https://api.anthropic.com/` over TLS (never over HTTP).
 - **FR-019**: The extension MUST implement a 1-second rate limit between consecutive analysis requests to prevent rapid-fire submissions.
 - **FR-020**: The extension MUST not log, cache, or retain user input or analysis results after the popup is closed.
@@ -112,7 +112,7 @@ A learner wants to look up a single word or a very short phrase to understand it
 ### API Error Handling
 
 - **HTTP 401 (Invalid API key)**: User sees "Invalid or expired API key. Check your settings." with link to Settings view.
-- **HTTP 429 (Rate limit)**: User sees "You've made too many requests. Please wait a moment before trying again." No automatic retry offered (user controls retry).
+- **HTTP 429 (Rate limit)**: User sees "You've made too many requests. Please wait a moment before trying again." No automatic retry — user controls retry manually via the Retry button.
 - **HTTP 5xx (Server error)**: User sees "Claude API is temporarily unavailable. Please try again in a moment." with manual Retry button.
 - **Network failure (timeout or connection error)**: User sees "Network error. Check your internet connection and try again." with Retry button.
 - **Malformed or non-JSON response**: User sees "Unexpected response format. Please retry." Engineering logs the response for debugging (without sensitive data).

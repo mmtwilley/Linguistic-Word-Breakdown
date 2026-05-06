@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(NODE_OPTIONS=\"--experimental-vm-modules\" npx --no-install jest --testPathPattern=tests/)",
+      "Bash(bash .specify/scripts/bash/check-prerequisites.sh --json --paths-only)"
+    ]
+  }
+}

@@ -206,7 +206,8 @@ describe('analyzeText', () => {
       return new Promise((_, reject) => {
         // Simulate abort after timer fires
         setTimeout(() => {
-          const err = new DOMException('Aborted', 'AbortError');
+          const err = new Error('Aborted');
+          err.name = 'AbortError';
           reject(err);
         }, 10001);
       });

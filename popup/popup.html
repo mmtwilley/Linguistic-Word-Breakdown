@@ -47,7 +47,10 @@
         <button id="cancel-btn" class="icon-btn" title="Close" aria-label="Close settings">&#10005;</button>
       </header>
       <div class="settings-section">
-        <label for="api-key-input" class="settings-label">Anthropic API Key</label>
+        <div class="settings-label-row">
+          <label for="api-key-input" class="settings-label">Anthropic API Key</label>
+          <a href="https://console.anthropic.com/account/keys" target="_blank" rel="noopener" class="get-key-link">Get API key ↗</a>
+        </div>
         <input type="password" id="api-key-input" class="api-key-input" placeholder="sk-ant-&#8230;" autocomplete="off" spellcheck="false">
         <p class="hint">Stored locally in your browser. Never shared with anyone except Anthropic.</p>
         <div id="settings-error" class="settings-error" hidden></div>

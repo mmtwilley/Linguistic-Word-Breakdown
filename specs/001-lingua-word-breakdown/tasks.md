@@ -63,14 +63,16 @@
 - [x] T011 Implement `validateResponse(response)` in analyzer.js:
   - JSON.parse() the response text
   - Catch and throw JsonError on parse failure
-  - Check required fields: translation (non-empty string), tokens (non-empty array)
-  - Throw ValidationError if fields missing or invalid
+  - Check required fields: translation (non-empty string), tokens (array, present)
+  - If tokens is empty array: throw ValidationError with message "No analysis returned"
+  - Throw ValidationError if other fields missing or invalid
 
 - [x] T012 [P] Implement token validation in analyzer.js:
   - For each token: check word, lemma, pos, meaning are all non-empty strings (per FR-005)
   - Validate POS tag is in vocabulary (noun, verb, adj, adv, pron, prep, conj, det, num, punct, other)
   - If POS invalid: silently correct to 'other' with console.warn (per security.md)
   - If token missing field: throw ValidationError with field name
+  - If meaning exceeds 5 words: log console.warn (per FR-011); do not reject (AI may occasionally exceed)
 
 - [x] T013 [P] Implement response size limits in analyzer.js:
   - Reject responses > 50 KB via JSON.stringify().length check (per FR-015)
@@ -86,6 +88,7 @@
   - Test response size limits (>50 KB, >500 tokens)
   - Test fetch timeout (AbortController fires at 10s)
   - Test error classification: NetworkError, TimeoutError, ApiError(401/429/5xx), JsonError, ValidationError
+  - Test token count mismatch (tokens.length ≠ input word count): verify results still rendered and console.warn fired
 
 - [x] T015 [P] Create unit test mocks in `extension/tests/mocks/`:
   - Mock fetch() with various HTTP responses (200, 401, 429, 500)
@@ -133,23 +136,23 @@
 - [x] T019 [US1] Implement input submission in popup.js:
   - On Analyze button click (or Enter key):
     - Validate input via analyzer.validateInput()
-    - Enforce 1-second rate limit (disable submit if clicked < 1s ago, per FR-019)
+    - Check rate limit (see T022) before proceeding
     - Show loading spinner, disable inputs
   - On success from analyzeText():
     - Hide loading spinner
-    - Render translation (via textContent, never innerHTML, per FR-016)
-    - Render token cards (for each token: word, lemma, pos, meaning via textContent)
+    - Render translation and token cards using textContent (see T023 for DOM safety rules)
   - Preserve input text after results (user can modify and resubmit)
 
 - [x] T020 [US1] Implement error display in popup.js:
   - Catch errors from analyzeText() in try/catch
   - Categorize by error type and display appropriate user message:
     - TimeoutError → "Request took too long. Please try again." + Retry
-    - ApiError(401) → "Invalid API key. Check your settings." + Settings button
-    - ApiError(429) → "Rate limited. Please wait before trying again." (no Retry, wait message)
-    - ApiError(5xx) → "Claude API error. Please try again." + Retry
-    - NetworkError → "Network error. Check your connection." + Retry
+    - ApiError(401) → "Invalid or expired API key. Check your settings." + Settings button
+    - ApiError(429) → "You've made too many requests. Please wait a moment before trying again." + Retry
+    - ApiError(5xx) → "Claude API is temporarily unavailable. Please try again in a moment." + Retry
+    - NetworkError → "Network error. Check your internet connection and try again." + Retry
     - JsonError → "Unexpected response format. Please retry." + Retry
+    - ValidationError (message="No analysis returned") → "No analysis returned. Please retry." + Retry
     - ValidationError → "Incomplete response. Please retry." + Retry
   - Show error banner with message and Retry button (except 401 shows Settings button)
   - Disable submit button during error state
@@ -180,7 +183,7 @@
 - [ ] T024 [US1] Manual test User Story 1:
   - Load extension in Chrome dev tools (chrome://extensions → Load unpacked)
   - Test golden path: German sentence → "Ich liebe Sprachen" → Verify translation + 3 tokens with correct word/lemma/pos/meaning
-  - Test longer sentence (30 words): Verify breakdown still works
+  - Test sentence of ~50 words: Verify breakdown renders without layout errors (covers SC-003)
   - Test English input: Verify translation + tokens
   - Test empty input: Verify "Please enter text..." prompt
   - Test whitespace input: Verify prompt
@@ -260,8 +263,8 @@
 
 - [x] T031 [P] Implement error banner styling:
   - Red background, white text, readable font size
-  - Dismiss button or auto-dismiss after 5 seconds (optional)
   - Error messages should fit in 400px popup width (test with longest message)
+  - Optional nice-to-have: dismiss button or auto-dismiss after 5 seconds (not required for MVP)
 
 - [ ] T032 [P] Test all error paths manually:
   - Run through 10 error scenarios from security.md test cases:
@@ -315,6 +318,7 @@
   - Resubmit after seeing results ✓
   - Error paths: timeout, invalid key, network ✓
   - Settings: Configure, save, use key ✓
+  - FR-020: Close popup after analysis, reopen → verify no previous results or input retained ✓
 
 - [ ] T040 Create git commit with feature complete tag
 

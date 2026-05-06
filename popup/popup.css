@@ -4,6 +4,8 @@
   padding: 0;
 }
 
+[hidden] { display: none !important; }
+
 :root {
   --primary: #4f46e5;
   --primary-hover: #4338ca;
@@ -256,9 +258,24 @@ textarea:focus {
   gap: 8px;
 }
 
+.settings-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .settings-label {
   font-size: 13px;
   font-weight: 600;
+}
+
+.get-key-link {
+  font-size: 12px;
+  color: var(--primary);
+  text-decoration: none;
+}
+.get-key-link:hover {
+  text-decoration: underline;
 }
 
 .api-key-input {

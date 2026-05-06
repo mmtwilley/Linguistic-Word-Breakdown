@@ -3,7 +3,7 @@
 **Feature**: Chrome extension that translates text and produces a word-level linguistic breakdown for language learning
 **Generated**: 2026-05-03
 **Scope**: Full feature
-**Implementation status**: 43/51 tasks completed (7 manual browser tests + 1 npm test pending)
+**Implementation status**: 34/40 tasks completed — unit tests passing, CSP and overlay bugs fixed, API key UX added; 6 manual browser tests pending
 
 ---
 
@@ -122,6 +122,103 @@
 
 ---
 
+### 8. Two-Tier Validation: Structural vs. Semantic
+
+**What we did**: `validateResponse()` in `lib/analyzer.js` runs two distinct checks. First it checks structural validity — is `translation` present, is `tokens` an array? Then it checks semantic usefulness — is the tokens array non-empty? Each failure throws a `ValidationError` with a different message ("Incomplete response" vs. "No analysis returned"), which `popup.js` dispatches to a different user-facing string.
+
+**Why**: A missing `tokens` field means the API returned something completely unexpected — a bug in the prompt or model. An empty `tokens` array means the model understood the schema but produced no analysis — a different failure, possibly from blank or unrecognizable input that slipped through client-side validation. Conflating them into one message hides useful signal from the user.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Single "Incomplete response" catch-all | Simpler, but loses the distinction between "wrong shape" and "right shape, no content" |
+| Let empty tokens render silently | Would display a valid-looking UI with no token cards — confusing and hard to debug |
+
+**When you'd choose differently**: For an internal tool where users are developers, a single generic error is fine — the error type logged to console has enough detail. For end users with no visibility into error types, message specificity is worth the extra code path.
+
+---
+
+### 9. Input Character Limit Enforced in JS, Not HTML `maxlength`
+
+**What we did**: The `<textarea>` in `popup.html` has no `maxlength` attribute. The 2000-character limit is enforced inside `validateInput()` in `lib/analyzer.js`, which throws a `ValidationError` that `popup.js` surfaces as a user-visible prompt.
+
+**Why**: HTML `maxlength` silently truncates the user's input the moment they type past the limit — the user has no warning that their text was cut. JS-side validation lets us reject the full input with a specific message ("Input too long — please keep it under 2000 characters"), keeping the user's original text intact so they can decide how to shorten it.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| `maxlength="2000"` on the textarea | Simple but silently destroys user input; no error message shown |
+| Both `maxlength` and JS validation | Belt-and-suspenders, but `maxlength` would still truncate before JS sees the full text |
+
+**When you'd choose differently**: For very short limits (e.g., a 10-character username field), `maxlength` is fine — the intent is obvious to users. For longer inputs where the cutoff is non-obvious, JS-side validation gives a better experience.
+
+---
+
+### 10. Mocking AbortErrors with a Plain `Error` Instead of `DOMException`
+
+**What we did**: In `tests/mocks/fetchMock.js`, `makeAbortError()` creates abort errors as `new Error('Aborted')` with `.name = 'AbortError'` set as an own property, rather than `new DOMException('Aborted', 'AbortError')`.
+
+**Why**: Two compounding problems made `DOMException` the wrong choice. First, `DOMException` is only a global in Node.js 18+; Node 16 throws `ReferenceError` at construction. Second, the original code wrapped the error in `Object.assign(new DOMException(...), { name: 'AbortError' })` — but `name` on a `DOMException` instance is a getter-only property on the prototype, so in strict mode (ES modules are always strict) the assign throws a `TypeError` before the `Promise.reject` is reached. The analyzer only checks `err.name === 'AbortError'` — it doesn't care whether the error is a real `DOMException` — so the minimal form that works everywhere is a plain `Error`.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| `new DOMException('Aborted', 'AbortError')` | Not a global in Node 16; fragile across runtimes |
+| `Object.assign(new DOMException(...), { name: 'AbortError' })` | Strict-mode `TypeError` — `name` is getter-only on the `DOMException` prototype |
+| Polyfill `globalThis.DOMException` in Jest setup | Adds test infrastructure for a problem that doesn't need the real type |
+
+**When you'd choose differently**: If the test needed to verify `err instanceof DOMException` (e.g., browser-specific behavior), you'd need the real type and would polyfill it in Jest's `setupFilesAfterFramework`. Since `analyzer.js` only checks `.name`, the duck-typed `Error` is correct.
+
+---
+
+### 11. `connect-src` Must Be Explicit in a Chrome Extension CSP
+
+**What we did**: Added `connect-src https://api.anthropic.com` to the `extension_pages` CSP in `manifest.json`. Without it, every `fetch()` to the Anthropic API returned `TypeError: Failed to fetch` — even though `host_permissions` already listed the same origin.
+
+**Why**: `host_permissions` and CSP are two separate security layers in Chrome extensions. `host_permissions` controls what the extension is *allowed* to access from Chrome's perspective. The CSP `connect-src` controls what the popup *page* is allowed to fetch — it's enforced by the browser's content security policy engine, which doesn't consult `host_permissions`. `default-src 'self'` falls back to `connect-src 'self'`, silently blocking all cross-origin fetches with no warning until you open DevTools.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Remove CSP entirely | Weakens security by allowing inline scripts and external resource loading |
+| Rely on `host_permissions` alone | Doesn't satisfy `connect-src`; fetch still blocked at the CSP layer |
+
+**When you'd choose differently**: If your extension proxies all API calls through a service worker (not the popup), you'd add `connect-src` to the service worker's CSP instead. The popup CSP only covers extension pages.
+
+---
+
+### 12. CSS `display` Properties Override the HTML `hidden` Attribute
+
+**What we did**: Added `[hidden] { display: none !important; }` as a global rule at the top of `popup.css`. Without it, the loading overlay was permanently visible because `.loading-overlay { display: flex; }` in the author stylesheet overrode the browser's built-in `[hidden]` rule.
+
+**Why**: The browser's default stylesheet sets `[hidden] { display: none }`, but author stylesheets take higher precedence. Any class that explicitly sets `display` will win over `[hidden]` silently — the element renders as if `hidden` isn't there. The `!important` on the `[hidden]` rule restores the expected behaviour: hidden elements are always hidden, regardless of what their class sets for `display`.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Use `.hidden` CSS class instead of `hidden` attribute | Works but is less semantic and requires manually keeping classes in sync |
+| Per-element override (`.loading-overlay[hidden] { display: none }`) | Has to be repeated for every element with a `display` class — fragile |
+
+**When you'd choose differently**: You'd skip the `!important` if you intentionally need to un-hide an element from JavaScript by removing a class while keeping the attribute — but that's a smell; just remove the `hidden` attribute directly.
+
+---
+
+### 13. Reduce Friction for Required External Setup Steps
+
+**What we did**: Added a "Get API key ↗" link directly in the Settings view that opens `console.anthropic.com/account/keys` in a new tab, placed inline next to the "Anthropic API Key" label.
+
+**Why**: The extension fails silently (or with an opaque 401) if the user doesn't have a key. Every extra step between "installed extension" and "first successful use" is a dropout point. Putting the link at exactly the moment the user needs it — inside the settings input they're already filling out — eliminates the need to search for where to get the key.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Link in the README only | Not visible during actual use; users don't read READMEs |
+| Show link only on 401 error | Useful as a secondary signal, but better to surface it before the first failure |
+
+**When you'd choose differently**: If your extension auto-detects a key from the environment (e.g., a desktop app reading `~/.config`), the link is unnecessary. It's only valuable when setup is entirely manual.
+
+---
+
 ## Concepts to Know
 
 ### ES Modules in a Chrome Extension (No Bundler)
@@ -171,6 +268,36 @@
 **Where we used it**: `validateResponse()` and the token-mapping loop in `lib/analyzer.js`; silently correcting invalid POS tags with `console.warn` rather than crashing.
 
 **Why it matters**: The Claude API can return unexpected output (model drift, version changes, edge inputs). Validation catches these before they cause silent data corruption or break the UI. The silent POS correction is a deliberate choice: an invalid POS tag is a model limitation, not a user error — degrading gracefully is better than showing an error.
+
+---
+
+### Specification Drift and the Single Source of Truth for Error Messages
+
+**What it is**: When the same user-facing string appears in multiple documents (the feature spec, the API contract, and the task description), they will drift out of sync over time. In this feature, four of the seven error messages in `popup.js` had diverged from the spec's wording by the time tasks were generated — shorter, vaguer versions appeared in the task descriptions.
+
+**Where we used it**: The exact error messages for HTTP 401, 429, 5xx, and network errors are defined in both `spec.md` (Error Handling section) and `contracts/ai-prompt-contract.md`. `tasks.md` T020 now references these with the verbatim wording. The canonical source is `contracts/ai-prompt-contract.md`.
+
+**Why it matters**: User-facing strings in specs are often written by product/UX stakeholders, not just developers. If the implementation drifts to shorter or vaguer wording, the user experience degrades in ways that don't show up in functional tests — the error still appears, just with the wrong message. Treat the contract as the authority, and copy verbatim from it during implementation.
+
+---
+
+### `Object.assign` and Getter-Only Prototype Properties in Strict Mode
+
+**What it is**: `Object.assign(target, source)` uses `[[Set]]` — the same path as a plain `=` assignment. If a property exists on the target's prototype chain as a getter with no setter, strict mode throws a `TypeError` when `[[Set]]` fires. ES modules are always strict, so this failure is a hard crash in module code, even though the same line works silently in a sloppy script.
+
+**Where we used it**: This was the root cause of the failing `makeAbortError()` mock. `DOMException.prototype.name` is getter-only; `Object.assign(new DOMException(...), { name: 'AbortError' })` threw before the `Promise.reject` ran, producing a synchronous `TypeError` that the analyzer's catch block classified as a `NetworkError`.
+
+**Why it matters**: `Object.assign` looks like a safe way to merge properties, but it hides a pitfall with accessor-defined properties on built-in prototypes. Whenever you're patching a property onto a DOM type, Error subclass, or other native object, verify the property is writable before using `Object.assign` — or use `Object.defineProperty` explicitly if you need to set a non-writable property.
+
+---
+
+### API Key Hygiene: Treat Keys Like Passwords
+
+**What it is**: An API key is a bearer token — whoever has it can make API calls billed to your account with no additional authentication. Exposing it in a chat log, a screenshot, a commit, or a public URL is equivalent to giving someone your password.
+
+**Where it applies**: Anywhere a key is typed, pasted, copied, or displayed — DevTools console output, chat messages, git diffs, log files. The extension itself is designed correctly (key stored in `chrome.storage.local`, never logged, displayed only as `type="password"`), but the *user's workflow* around the key matters just as much.
+
+**Why it matters**: Exposed keys are scraped automatically by bots monitoring public channels. A key leaked in a chat message should be considered compromised immediately — revoke it at `console.anthropic.com/account/keys` and generate a new one. The old key may already have been used.
 
 ---
 

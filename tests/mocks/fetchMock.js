@@ -46,7 +46,9 @@ export function makeNetworkError() {
 }
 
 export function makeAbortError() {
-  return Promise.reject(Object.assign(new DOMException('Aborted', 'AbortError'), { name: 'AbortError' }));
+  const err = new Error('Aborted');
+  err.name = 'AbortError';
+  return Promise.reject(err);
 }
 
 export function makeNeverResolvingFetch() {
