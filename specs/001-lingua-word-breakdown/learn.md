@@ -1,9 +1,9 @@
 # What I Learned: Linguistic Word Breakdown
 
 **Feature**: Chrome extension that translates text and produces a word-level linguistic breakdown for language learning
-**Generated**: 2026-05-03
+**Generated**: 2026-05-06
 **Scope**: Full feature
-**Implementation status**: 34/40 tasks completed — unit tests passing, CSP and overlay bugs fixed, API key UX added; 6 manual browser tests pending
+**Implementation status**: 38/40 tasks completed — popup flow complete, right-click context menu with Shadow DOM overlay implemented; T032 (error paths manual test) skipped by user, T040 (final commit) pending
 
 ---
 
@@ -203,6 +203,55 @@
 
 ---
 
+### 14. Closed Shadow DOM for the Injected Overlay
+
+**What we did**: The context menu result panel is rendered inside a Shadow DOM with `mode: 'closed'` attached to a zero-size host `div` appended to `document.documentElement`. All styles are inlined inside the shadow root.
+
+**Why**: Two isolation problems need solving when injecting UI into arbitrary pages. First, the page's CSS can override your panel's styles — a site that sets `* { font-size: 12px !important }` will mangle your token cards. Shadow DOM creates a CSS boundary: page styles cannot penetrate it (and your styles don't leak out). Second, page JavaScript can interact with elements added to the regular DOM. `mode: 'closed'` means `host.shadowRoot` returns `null` — no page script can reach in and read the overlay content or manipulate the close button.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Regular DOM injection | Page styles win; page JS can read overlay contents including any user data rendered |
+| `<iframe>` overlay | Works but creates a separate browsing context, complicates sizing/positioning, and may trigger CSP on the host page |
+| Shadow DOM `mode: 'open'` | Page JS can call `host.shadowRoot` and read rendered content — weaker isolation |
+
+**When you'd choose differently**: If you need the page to be able to *interact* with your injected widget via JS (e.g., a developer tool that exposes an API), use `mode: 'open'`. For user-facing overlays where isolation is the goal, always prefer `mode: 'closed'`.
+
+---
+
+### 15. Self-Contained Function Passed to `chrome.scripting.executeScript`
+
+**What we did**: `linguaRenderOverlay` in `background/service-worker.js` is defined as a top-level function that references only its `payload` parameter and native DOM APIs. It's passed to `chrome.scripting.executeScript` as `func: linguaRenderOverlay, args: [payload]`.
+
+**Why**: `executeScript` with `func:` serializes the function using `.toString()` and re-evaluates it in the target page's context. This means the function is completely detached from the service worker's module scope at execution time — any outer-scope variable it references will be `undefined` in the page, and any import will throw a `ReferenceError`. The function must be entirely self-contained: no module imports, no references to service-worker constants, no closures. Data is passed in via `args`, which Chrome serializes as JSON and provides as function arguments.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Declarative content script (`"content_scripts"` in manifest) | Loaded on every page that matches the URL pattern — wastes resources even when never used; requires manifest declaration |
+| `files: ['overlay.js']` in `executeScript` | On-demand, but the file must be bundled with the extension and can't receive dynamic data at injection time without a separate message pass |
+
+**When you'd choose differently**: If the injected UI is complex enough to need multiple functions, shared state, or more than ~100 lines, extract it to a dedicated content script file and use `chrome.tabs.sendMessage` to pass data after injection. For a single self-contained panel, the `func` approach keeps related code co-located.
+
+---
+
+### 16. `activeTab` Permission Instead of Broad Host Permissions for Injection
+
+**What we did**: The `"activeTab"` permission is used (rather than `"host_permissions": ["<all_urls>"]`) to authorize `chrome.scripting.executeScript` for the context menu feature. No broad host permissions were added.
+
+**Why**: `activeTab` grants temporary access to the exact tab the user is currently interacting with — and only when they invoke the extension through a user gesture (clicking a context menu item counts). The permission expires when the user switches tabs. This is the principle of least privilege: the extension gets access to exactly one page, for exactly one interaction, initiated explicitly by the user. Broad host permissions, by contrast, grant the extension permanent read/write access to every URL on install — Chrome Web Store reviews flag this, and users see a stronger permission warning at install time.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| `host_permissions: ["<all_urls>"]` | Works but grants persistent access to all sites; triggers stronger install warning and CWS scrutiny |
+| `host_permissions: ["https://*/*"]` | Same problem, just scoped to HTTPS |
+
+**When you'd choose differently**: If you need to inject *without* a user gesture — for example, a content script that auto-highlights words on every page load — `activeTab` doesn't cover it. You'd need explicit `host_permissions` for those origins, which comes with broader user-visible permissions.
+
+---
+
 ### 13. Reduce Friction for Required External Setup Steps
 
 **What we did**: Added a "Get API key ↗" link directly in the Settings view that opens `console.anthropic.com/account/keys` in a new tab, placed inline next to the "Anthropic API Key" label.
@@ -291,6 +340,26 @@
 
 ---
 
+### Shadow DOM as a CSS and JS Isolation Boundary
+
+**What it is**: Shadow DOM is a browser-native mechanism for encapsulating a subtree of DOM nodes. Styles defined inside a shadow root don't affect the outer page, and (in `mode: 'closed'`) the page can't traverse into the shadow tree via JavaScript.
+
+**Where we used it**: The context menu overlay in `background/service-worker.js` — `linguaRenderOverlay` attaches a closed shadow root to the host `div` and puts the entire panel inside it.
+
+**Why it matters**: Web components and injected UIs live inside pages they didn't control. Without Shadow DOM, any `*` reset, font override, or color declaration on the host page can silently break your injected panel. Shadow DOM gives you a guaranteed visual environment without needing to scope every selector with a long prefix.
+
+---
+
+### `chrome.scripting.executeScript` — Serialization Trap
+
+**What it is**: `chrome.scripting.executeScript` with a `func:` argument injects code into a page by calling `.toString()` on the function and re-evaluating the resulting string in the target context. The page context gets a completely fresh copy — no shared memory, no shared module scope.
+
+**Where we used it**: `inject()` in `background/service-worker.js` passes `linguaRenderOverlay` as the `func`. Payload data (analysis results or loading state) is passed via `args`, which Chrome JSON-serializes.
+
+**Why it matters**: This is the single most surprising constraint in the context menu implementation. Code that works perfectly in the service worker will throw `ReferenceError: X is not defined` in the injected function if `X` is imported from a module. The function boundary is a hard serialization wall — treat it the same way you'd treat code that's going to be `JSON.stringify`'d and `eval`'d elsewhere.
+
+---
+
 ### API Key Hygiene: Treat Keys Like Passwords
 
 **What it is**: An API key is a bearer token — whoever has it can make API calls billed to your account with no additional authentication. Exposing it in a chat log, a screenshot, a commit, or a public URL is equivalent to giving someone your password.
@@ -303,18 +372,23 @@
 
 ## Architecture Overview
 
-The feature has two clear layers separated by a clean boundary. `lib/analyzer.js` owns all external communication and data validation — it knows nothing about the DOM. `popup/popup.js` owns all UI state and rendering — it calls `analyzeText()` and handles whatever comes back. This separation means the entire data layer can be unit-tested with mocked `fetch()` calls, without a browser.
+The feature has two entry points sharing one data layer. `lib/analyzer.js` owns all external communication and validation — it knows nothing about the DOM and has no Chrome API dependencies. Both the popup and the service worker import from it, which is why unit tests written against `analyzer.js` cover both flows without needing a browser.
 
-The service worker is intentionally empty: MV3 requires it to exist, but all logic stays in the popup context where the user interaction lives.
+The popup owns its own UI state. The service worker owns the context menu lifecycle and injects result UI into pages via `chrome.scripting.executeScript`. The injected overlay function (`linguaRenderOverlay`) is self-contained at the serialization boundary — it receives structured data via `args` and builds the panel entirely from DOM APIs.
 
 ```
 popup.html  (entry point, loads as ES module)
   └── popup.js  (UI state: views, events, rendering)
         ├── lib/analyzer.js  (fetch, parse, validate, classify errors)
         │     └── https://api.anthropic.com/v1/messages
-        └── chrome.storage.local  (API key, read on each submit)
+        └── chrome.storage.local  (API key)
 
-background/service-worker.js  (empty MV3 placeholder)
+background/service-worker.js  (ES module; context menu + page injection)
+  ├── lib/analyzer.js  (shared — same fetch/validate layer)
+  ├── chrome.storage.local  (reads apiKey on each click)
+  ├── chrome.contextMenus  (registers "Lingua: Analyze" on install)
+  └── chrome.scripting.executeScript → linguaRenderOverlay()
+        └── Closed Shadow DOM overlay injected into active tab
 ```
 
 ---
@@ -330,3 +404,7 @@ background/service-worker.js  (empty MV3 placeholder)
 | Lemma | The base dictionary form of a word (e.g., "running" → "run", "languages" → "language") |
 | POS | Part of speech — grammatical category of a word (noun, verb, adj, etc.) |
 | `AbortController` | Web API for cancelling in-flight async operations like `fetch()` |
+| Shadow DOM | Browser-native DOM encapsulation; `mode: 'closed'` prevents page JS/CSS from accessing the shadow tree |
+| `activeTab` | Chrome permission that grants temporary access to the active tab on user gesture — no persistent or broad site access |
+| `chrome.scripting.executeScript` | MV3 API for injecting a function or file into a tab; `func:` mode serializes the function — outer-scope variables are unavailable inside |
+| Context menu | The right-click menu in Chrome; `chrome.contextMenus.create` registers extension items that appear when `contexts: ['selection']` matches |

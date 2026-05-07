@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Translate text and get word-level linguistic analysis for language learning",
   "permissions": [
-    "storage"
+    "storage",
+    "contextMenus",
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "https://api.anthropic.com/*"
@@ -14,7 +17,8 @@
     "default_title": "Lingua Word Breakdown"
   },
   "background": {
-    "service_worker": "background/service-worker.js"
+    "service_worker": "background/service-worker.js",
+    "type": "module"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; connect-src https://api.anthropic.com; default-src 'self'; img-src 'self' data:;"

@@ -51,6 +51,26 @@ A learner wants to look up a single word or a very short phrase to understand it
 
 ---
 
+---
+
+### User Story 4 - Right-Click to Analyze Selected Text on Any Page (Priority: P2)
+
+A learner is reading a foreign-language article in their browser. They highlight a word, phrase, or sentence, right-click, and choose "Lingua: Analyze '...'" from the context menu. An overlay panel appears in the top-right corner of the page showing a spinner while the analysis runs, then the full translation and token breakdown — without leaving the page or opening the popup.
+
+**Why this priority**: Reduces friction for in-page reading workflows. Copying text, switching to the popup, and pasting are three extra steps that break reading flow. Context menu integration brings the analysis to where the text already is.
+
+**Independent Test**: Highlight a foreign-language word on any normal webpage, right-click → "Lingua: Analyze", and verify the overlay appears with a spinner then resolves to the token breakdown. Close the overlay with ✕.
+
+**Acceptance Scenarios**:
+
+1. **Given** the user has selected text on a webpage, **When** they right-click and choose "Lingua: Analyze", **Then** a panel overlay appears immediately showing a loading spinner.
+2. **Given** the overlay is showing the spinner, **When** the analysis completes, **Then** the spinner is replaced by the translation and token breakdown using the same format as the popup UI.
+3. **Given** the overlay is visible, **When** the user clicks the ✕ button, **Then** the overlay is removed from the page.
+4. **Given** no API key is configured, **When** the user triggers the context menu, **Then** the overlay shows a prompt to open the extension settings.
+5. **Given** the analysis fails (network error, API error, etc.), **When** the error is received, **Then** the overlay displays the user-friendly error message instead of the spinner.
+
+---
+
 ### Edge Cases
 
 - What happens when the input is empty or whitespace only? The extension should prompt the user to enter text rather than sending a request.
@@ -83,6 +103,11 @@ A learner wants to look up a single word or a very short phrase to understand it
 - **FR-018**: The extension MUST send API requests only to `https://api.anthropic.com/` over TLS (never over HTTP).
 - **FR-019**: The extension MUST implement a 1-second rate limit between consecutive analysis requests to prevent rapid-fire submissions.
 - **FR-020**: The extension MUST not log, cache, or retain user input or analysis results after the popup is closed.
+- **FR-021**: The extension MUST register a context menu item labeled "Lingua: Analyze '%s'" visible when the user has text selected on a webpage.
+- **FR-022**: On context menu activation the extension MUST immediately inject a loading overlay into the active tab before calling the API, so the user has visual feedback within one frame.
+- **FR-023**: The injected overlay MUST be isolated inside a closed Shadow DOM (`attachShadow({ mode: 'closed' })`) to prevent host-page CSS from affecting its appearance and host-page JavaScript from reading its contents.
+- **FR-024**: The injected overlay MUST render all analysis content (translation, token fields) via `textContent`, never `innerHTML`, consistent with FR-016.
+- **FR-025**: If the active tab is not injectable (e.g., `chrome://` pages), the context menu activation MUST fail silently without surfacing a browser error to the user.
 
 ### Key Entities
 
@@ -156,7 +181,7 @@ A learner wants to look up a single word or a very short phrase to understand it
 - **No logs**: User input and analysis results are not logged to disk or cloud. Error traces may reference request metadata (HTTP status, error type) but never user text.
 - **Data retention**: Analysis results are shown in the popup and cleared when the popup closes or new analysis is submitted. No history kept.
 - **No caching**: Each request to Claude is independent; results not cached.
-- **Permissions minimization**: Extension requests only `storage` and `host_permissions` for Claude API. No access to browsing history, tabs, or page content.
+- **Permissions minimization**: Extension requests `storage`, `contextMenus`, `activeTab`, and `scripting` permissions, plus `host_permissions` for the Claude API. `activeTab` grants access only to the current tab during an explicit user gesture (context menu click) — no persistent or broad page-content access.
 
 ### Content Security Policy (CSP)
 
@@ -179,7 +204,7 @@ A learner wants to look up a single word or a very short phrase to understand it
 - The extension communicates with an external AI API (e.g., Claude) to perform translation and linguistic analysis; no on-device NLP model is bundled.
 - An API key for the AI service is stored securely in the extension's storage and is configured by the user during initial setup.
 - Mobile browser support is out of scope; the extension targets desktop Chrome.
-- The extension popup is the primary (and only) interface — no content-script overlay or context-menu integration is in scope for v1.
+- The extension has two entry points: the popup (for focused analysis) and a right-click context menu (for in-page reading workflows). Both share the same API client and validation layer.
 - Language detection is handled implicitly by the AI model; the user does not need to specify the source language.
 - The AI model may occasionally make best-guess interpretations for ambiguous words; this is acceptable per the stated rules.
 - User's OS profile security is trusted; `chrome.storage.local` encryption is assumed to be as secure as the OS allows.
