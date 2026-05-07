@@ -180,7 +180,7 @@
 
 ### Manual Testing
 
-- [ ] T024 [US1] Manual test User Story 1:
+- [x] T024 [US1] Manual test User Story 1:
   - Load extension in Chrome dev tools (chrome://extensions → Load unpacked)
   - Test golden path: German sentence → "Ich liebe Sprachen" → Verify translation + 3 tokens with correct word/lemma/pos/meaning
   - Test sentence of ~50 words: Verify breakdown renders without layout errors (covers SC-003)
@@ -209,7 +209,7 @@
   - Verify Claude chooses most likely POS given sentence context
   - Test contractions (e.g., "don't" → splits or keeps as single token)
 
-- [ ] T026 [US2] Manual test User Story 2:
+- [x] T026 [US2] Manual test User Story 2:
   - Submit English sentence: "I love languages"
   - Verify translation shows as-is (or very similar)
   - Verify tokens: "I" (pron), "love" (verb), "languages" (noun)
@@ -239,7 +239,7 @@
   - Token card should render correctly for single token (no layout issues)
   - No assumption of multiple tokens in CSS/JS
 
-- [ ] T029 [US3] Manual test User Story 3:
+- [x] T029 [US3] Manual test User Story 3:
   - Single English word: "Hello" → 1 token
   - Single French word: "Bonjour" → 1 token
   - Two-word phrase: "Hello world" → 2 tokens
@@ -310,7 +310,7 @@
   - All analyzer.js tests pass
   - Coverage report shows analyzer.js, DOM rendering functions tested
 
-- [ ] T039 Manual smoke test all user stories together:
+- [x] T039 Manual smoke test all user stories together:
   - Load extension
   - US1: German text → Translate + tokens ✓
   - US2: English text → Tokens ✓
