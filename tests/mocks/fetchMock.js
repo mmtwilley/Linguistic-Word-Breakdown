@@ -30,14 +30,17 @@ export function makeOversizedResponse() {
 }
 
 export function makeClaudeResponse(content) {
-  return { content: [{ text: JSON.stringify(content) }] };
+  return { content: [{ type: 'tool_use', name: 'linguistic_analysis', input: content }] };
 }
 
 export function makeHttpResponse(status, body = null) {
+  const resolvedBody = body ?? makeClaudeResponse(VALID_RESPONSE);
+  const bodyText = JSON.stringify(resolvedBody);
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: async () => body ?? makeClaudeResponse(VALID_RESPONSE),
+    text: async () => bodyText,
+    json: async () => resolvedBody,
   };
 }
 
