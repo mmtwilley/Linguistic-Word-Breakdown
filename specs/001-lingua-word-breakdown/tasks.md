@@ -35,7 +35,7 @@
 
 ### Error Handling Infrastructure
 
-- [x] T006 Create `extension/lib/analyzer.js` with custom error classes: `TimeoutError`, `ApiError`, `NetworkError`, `JsonError`, `ValidationError`
+- [x] T006 Create `extension/lib/errors/index.js` with exported error classes: `TimeoutError`, `ApiError`, `NetworkError`, `JsonError`, `ValidationError` — then re-export them from `extension/lib/analyzer.js` so consumers import from `lib/errors/index.js` (per Constitution IV)
 - [x] T007 [P] Implement `validateInput(text)` in analyzer.js: check type, non-empty, non-whitespace, ≤ 2000 chars per FR-012
 
 ### AI API Integration
@@ -46,7 +46,12 @@
   - Use model: claude-sonnet-4-6
   - Include system prompt (from contracts/ai-prompt-contract.md verbatim)
   - Set max_tokens: 2048
-  - Wrap fetch in 10-second timeout using AbortController (per FR-013)
+  - Wrap fetch in 30-second timeout using AbortController (`TIMEOUT_MS = 30000`, per FR-013 — raised from 10 s to accommodate romanization/pronunciation/particle payloads)
+
+- [x] T047 [P] Enable prompt caching on the system message in analyzer.js (per Constitution III SHOULD):
+  - Send `system` as an array: `[{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }]`
+  - Add `anthropic-beta: 'prompt-caching-2024-07-31'` request header to opt in to the caching beta
+  - Caches the system prompt for up to 5 minutes; repeated analyses within the same cache window skip re-tokenising the prompt, reducing latency and cost
 
 - [x] T009 [P] Implement HTTP error handling in analyzer.js:
   - Detect and throw ApiError(status, message) for HTTP errors
@@ -69,10 +74,12 @@
 
 - [x] T012 [P] Implement token validation in analyzer.js:
   - For each token: check word, lemma, pos, meaning are all non-empty strings (per FR-005)
-  - Validate POS tag is in vocabulary (noun, verb, adj, adv, pron, prep, conj, det, num, punct, other)
-  - If POS invalid: silently correct to 'other' with console.warn (per security.md)
-  - If token missing field: throw ValidationError with field name
-  - If meaning exceeds 5 words: log console.warn (per FR-011); do not reject (AI may occasionally exceed)
+  - Validate POS tag is in `VALID_POS` set (noun, verb, adj, adv, pron, prep, conj, det, num, punct, other); if invalid: silently correct to 'other' with console.warn (per security.md)
+  - If required field missing: throw ValidationError with field name
+  - If meaning exceeds 5 words: log console.warn (per FR-011); do not reject
+  - Optional field validation (per FR-026–028):
+    - `romanization` / `pronunciation`: if present but not a non-empty string, delete the field and continue
+    - `particles`: if present, must be an array; filter out entries where `form` is missing or empty; validate each `particles[].type` against `VALID_PARTICLE_TYPES` (topic, subject, object, sentence-end, other-particle) — silently correct unrecognized types to 'other-particle' with console.warn; if array is empty after filtering, delete the field
 
 - [x] T013 [P] Implement response size limits in analyzer.js:
   - Reject responses > 50 KB via JSON.stringify().length check (per FR-015)
@@ -299,16 +306,16 @@
   - [x] No eval() or Function() (search for eval - should not appear)
 
 - [x] T037 Verify error handling requirements from spec.md:
-  - [x] 10-second timeout implemented (AbortController in fetch)
+  - [x] 30-second timeout implemented (`TIMEOUT_MS = 30000` in `lib/analyzer.js`, AbortController in fetch)
   - [x] All 6+ error types caught and displayed (TimeoutError, ApiError, NetworkError, JsonError, ValidationError)
   - [x] Input validation: empty, whitespace, 2000 char limit
   - [x] Response validation: required fields, token structure, size limits
   - [x] 1-second rate limit between requests
 
-- [ ] T038 Run unit tests (if created):
-  - npm test (or jest command)
+- [ ] T038 Run unit tests:
+  - `npm test` (or jest command per package.json)
   - All analyzer.js tests pass
-  - Coverage report shows analyzer.js, DOM rendering functions tested
+  - Coverage report shows analyzer.js and DOM rendering functions tested
 
 - [x] T039 Manual smoke test all user stories together:
   - Load extension
@@ -323,6 +330,66 @@
 - [ ] T040 Create git commit with feature complete tag
 
 **Checkpoint**: Feature complete, tested, documented. Ready for release.
+
+---
+
+## Phase 7: User Story 4 — Right-Click Context Menu (Priority: P2)
+
+**Goal**: Users can highlight text on any webpage, right-click → "Lingua: Analyze '…'", and see a Shadow DOM overlay with a spinner that resolves to the full translation + token breakdown — without leaving the page.
+
+**Independent Test**: Highlight a foreign-language word on any normal webpage, right-click → "Lingua: Analyze", verify the overlay appears with a spinner, resolves to token breakdown, and closes with ✕.
+
+**Note**: This phase was implemented ad-hoc before tasks were written. These tasks document what was built for traceability and serve as a retroactive checklist for verification.
+
+### Service Worker — Context Menu
+
+- [x] T041 [P] Register context menu in `extension/background/service-worker.js`:
+  - `chrome.runtime.onInstalled`: call `chrome.contextMenus.create` with `id: "lingua-analyze"`, `title: "Lingua: Analyze '%s'"`, `contexts: ["selection"]` (per FR-021)
+  - On re-install: call `chrome.contextMenus.remove` first to avoid duplicate-ID errors
+
+- [x] T042 [P] Implement `chrome.contextMenus.onClicked` handler in service-worker.js:
+  - Read `info.selectionText` (the highlighted text) and `tab.id`
+  - Load `apiKey` from `chrome.storage.local`
+  - If no API key: send `{ type: "LINGUA_NO_KEY" }` to tab via `chrome.tabs.sendMessage`
+  - Inject overlay into tab via `chrome.scripting.executeScript` before calling the API (per FR-022)
+  - Call `analyzeText(selectionText, apiKey)` and send result to tab
+  - On error: send `{ type: "LINGUA_ERROR", message }` to tab
+
+- [x] T043 [P] Implement silent failure for non-injectable tabs in service-worker.js:
+  - Wrap `chrome.scripting.executeScript` in try/catch
+  - Catch errors on `chrome://`, `chrome-extension://`, and other restricted pages
+  - Suppress error silently — do not surface a browser error to the user (per FR-025)
+
+### Overlay — Content Script
+
+- [x] T044 Create overlay injection logic (injected via `chrome.scripting.executeScript`):
+  - Check if overlay already exists; if so, remove it before re-injecting (idempotent)
+  - Create a host `<div>` and attach a **closed** Shadow DOM: `attachShadow({ mode: 'closed' })` (per FR-023)
+  - Inject overlay CSS into the shadow root (not the host page) to prevent style bleed
+  - Render initial loading spinner immediately so the user has feedback within one frame (per FR-022)
+  - Add ✕ close button: click removes the host element from the page (per US4 AC-3)
+
+- [x] T045 [P] Implement overlay result rendering:
+  - Listen for `chrome.runtime.onMessage` for `{ type: "LINGUA_RESULT" }` and `{ type: "LINGUA_ERROR" }`
+  - On result: replace spinner with translation headline + token cards using the same layout as popup UI
+  - ALL content inserted via `textContent`, never `innerHTML` (per FR-024, Constitution I)
+  - CSS class suffixes derived from `pos` and `particles[].type` values MUST be validated against `VALID_POS` / `VALID_PARTICLE_TYPES` before use as class names (per Constitution I)
+  - On error: replace spinner with user-friendly error message (per US4 AC-5)
+  - On no-key: replace spinner with prompt to open extension settings (per US4 AC-4)
+
+### Manual Testing
+
+- [x] T046 Manual test User Story 4:
+  - Highlight a foreign-language word on a normal webpage → right-click → "Lingua: Analyze" → verify overlay appears with spinner (covers FR-022)
+  - Verify spinner replaced by translation + token breakdown (covers US4 AC-2)
+  - Verify overlay is visually isolated (host-page styles do not affect it) (covers FR-023)
+  - Click ✕ → verify overlay is removed (covers US4 AC-3)
+  - Remove API key → trigger context menu → verify overlay shows settings prompt (covers US4 AC-4)
+  - Disable network → trigger context menu → verify overlay shows error message (covers US4 AC-5)
+  - Navigate to `chrome://extensions` → trigger context menu → verify no browser error dialog (covers FR-025)
+  - Verify popup US1 flow still works after context menu use (no regression)
+
+**Checkpoint**: Context menu fully functional, overlay isolated in Shadow DOM, all five FR-021–025 requirements verified.
 
 ---
 

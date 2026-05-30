@@ -1,9 +1,9 @@
 # What I Learned: Linguistic Word Breakdown
 
 **Feature**: Chrome extension that translates text and produces a word-level linguistic breakdown for language learning
-**Generated**: 2026-05-06
+**Generated**: 2026-05-06 | **Last updated**: 2026-05-29
 **Scope**: Full feature
-**Implementation status**: 38/40 tasks completed — popup flow complete, right-click context menu with Shadow DOM overlay implemented; T032 (error paths manual test) skipped by user, T040 (final commit) pending
+**Implementation status**: 44/47 tasks completed — all core flows complete; T032 (error paths manual test), T038 (npm test run), T040 (final commit) remain
 
 ---
 
@@ -11,7 +11,7 @@
 
 ### 1. Direct `fetch()` from the Popup Instead of Routing Through the Service Worker
 
-**What we did**: `popup.js` calls the Claude API directly via `fetch()`. The service worker (`background/service-worker.js`) is an empty placeholder required by MV3.
+**What we did**: `popup.js` calls the Claude API directly via `fetch()`. The service worker (`background/service-worker.js`) handles only the context menu events; the popup has its own independent API client path.
 
 **Why**: The popup is alive for the entire user interaction, so there's no lifecycle concern. The popup already has access to `fetch()` and `chrome.storage.local`. Routing through the service worker would add `chrome.runtime.sendMessage` / `onMessage` boilerplate with zero benefit — it's a common MV3 mistake to reach for the service worker out of habit from MV2.
 
@@ -27,7 +27,7 @@
 
 ### 2. Typed Error Class Hierarchy Instead of Error Codes or Strings
 
-**What we did**: Five custom classes — `TimeoutError`, `ApiError`, `NetworkError`, `JsonError`, `ValidationError` — each extending `Error`, defined in `lib/analyzer.js` and checked with `instanceof` in `popup.js`.
+**What we did**: Five custom classes — `TimeoutError`, `ApiError`, `NetworkError`, `JsonError`, `ValidationError` — each extending `Error`, defined in `lib/errors/index.js` and re-exported from `lib/analyzer.js`. The UI checks them with `instanceof` in `popup.js handleError()`.
 
 **Why**: The UI needs to respond differently to each failure mode — 401 shows a Settings link, 429 shows a wait message, network errors show Retry. If errors were raw strings or numeric codes, `popup.js` would need brittle string matching. `instanceof` dispatch is readable, refactor-safe, and works across module boundaries without sharing a constants file.
 
@@ -41,19 +41,20 @@
 
 ---
 
-### 3. System Prompt as the API Contract for Structured JSON
+### 3. Claude Tool Use (Function Calling) for Guaranteed Structured Output
 
-**What we did**: The Claude system prompt (defined as a constant in `lib/analyzer.js`, versioned in `contracts/ai-prompt-contract.md`) instructs the model to return *only* a JSON object matching a specific schema — no prose, no markdown, no extra text.
+**What we did**: The API call in `lib/analyzer.js` uses Claude's tool use mechanism — `ANALYSIS_TOOL` declares a formal `input_schema`, and `tool_choice: { type: 'tool', name: 'linguistic_analysis' }` forces Claude to always invoke the tool. The result is extracted from `content.find(b => b.type === 'tool_use').input` — never from `content[0].text`.
 
-**Why**: Claude reliably follows strict schema constraints when they're embedded in the system prompt and the user message is purely the input text. This eliminates the need for regex extraction or post-processing fallbacks. The prompt IS the contract — any change to the expected output shape must be reflected there first.
+**Why**: Tool use (function calling) moves the schema contract from the system prompt into the API request itself. Claude is guaranteed to return structured data matching the declared schema rather than freeform text that merely *looks* like JSON. The Constitution (Principle III) explicitly prohibits `JSON.parse(content[0].text)` — if the model drifts, adds prose, or wraps the JSON in markdown fences, a prompt-only approach silently fails. Tool use fails loudly and predictably.
 
 **Alternatives considered**:
 | Approach | Why it wasn't chosen |
 |----------|---------------------|
-| Claude tool use / structured outputs | More robust for production but adds SDK complexity; `fetch()` + system prompt is sufficient here |
-| Parse natural-language response | Brittle, model-version-sensitive, and hard to validate |
+| System prompt instructs "return only JSON" | Brittle — model can add explanation text or wrap in markdown; format changes across model versions |
+| `JSON.parse(content[0].text)` on raw output | Explicitly prohibited by Constitution Principle III; no schema enforcement |
+| External JSON schema validation library | No build step allowed (Constitution Principle II); validation written manually |
 
-**When you'd choose differently**: For a commercial or high-volume product, use Claude's structured outputs or tool use — they provide schema enforcement at the API level rather than relying on prompt discipline.
+**When you'd choose differently**: For a throwaway script where schema drift doesn't matter, a strict system prompt is simpler. For any production feature where the output feeds structured UI, always use tool use — it's the difference between a type-checked interface and duck typing.
 
 ---
 
@@ -74,23 +75,41 @@
 
 ---
 
-### 5. `AbortController` for the 10-Second Timeout
+### 5. `AbortController` for the 30-Second Timeout
 
-**What we did**: In `analyzeText()`, an `AbortController` is created before the `fetch()` call. A `setTimeout` fires `controller.abort()` after 10 seconds. The `signal` is passed to `fetch()`.
+**What we did**: In `analyzeText()`, an `AbortController` is created before the `fetch()` call. A `setTimeout` fires `controller.abort()` after 30 seconds (`TIMEOUT_MS = 30000`). The `signal` is passed to `fetch()`.
 
-**Why**: `AbortController` actually cancels the underlying network request, freeing the connection and memory. The alternative — `Promise.race` with a timeout promise — lets the winner resolve but leaves the `fetch()` promise hanging in the background, consuming the connection slot until the server responds.
+**Why**: `AbortController` actually cancels the underlying network request, freeing the connection and memory. The alternative — `Promise.race` with a timeout promise — lets the winner resolve but leaves the `fetch()` promise hanging in the background, consuming the connection slot until the server responds. The timeout is 30 seconds (not the initially-planned 10s) because optional response fields — romanization, IPA pronunciation, and particle arrays for agglutinative languages — add substantial payload size, and Claude needs more time to construct them.
 
 **Alternatives considered**:
 | Approach | Why it wasn't chosen |
 |----------|---------------------|
-| `Promise.race([fetch(...), timeout(10000)])` | Doesn't cancel the fetch; the request continues running and wastes resources |
+| `Promise.race([fetch(...), timeout(30000)])` | Doesn't cancel the fetch; the request continues running and wastes resources |
 | `XMLHttpRequest` with `.timeout` | Supports timeout natively but is verbose and callback-based |
+| Shorter timeout (10s) | Insufficient for large responses with romanization + IPA + particle arrays |
 
-**When you'd choose differently**: You'd always prefer `AbortController` for cancellable fetches. The only exception is targeting environments without `AbortController` support — not a concern for Chrome 120+.
+**When you'd choose differently**: You'd always prefer `AbortController` for cancellable fetches. Adjust the timeout duration based on your p99 response time — for simple prompts with short outputs, 10–15s is appropriate; for structured outputs with optional enrichment fields, 30s is safer.
 
 ---
 
-### 6. Two-View Layout Toggled with the `hidden` Attribute (No Router)
+### 6. Prompt Caching on the System Message
+
+**What we did**: The system message is sent as an array with `cache_control: { type: 'ephemeral' }` on the single text block. The `anthropic-beta: prompt-caching-2024-07-31` header opts in to the caching beta.
+
+**Why**: The system prompt (which defines the full linguistic analysis schema, POS vocabulary, and per-language romanization rules) is identical on every request in a session — only the user's input text changes. Anthropic caches the tokenized system prompt for up to 5 minutes. On cache hits, Claude skips re-tokenizing the prompt, which reduces both latency and cost per call. For a user who analyzes multiple sentences in a session, every call after the first benefits from the cache.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| No caching | Pays full tokenization cost on every request; no latency benefit |
+| Caching the user message | User messages change every call — caching them has no benefit |
+| Server-side session caching | Would require a backend; out of scope |
+
+**When you'd choose differently**: Skip prompt caching when the system prompt changes per request (e.g., personalized instructions that include user name or preferences). The cache key is the exact token sequence — any change invalidates it.
+
+---
+
+### 7. Two-View Layout Toggled with the `hidden` Attribute (No Router)
 
 **What we did**: Main view and Settings view are both present in `popup.html`'s DOM from the start. `popup.js` toggles their `hidden` attribute to switch between them.
 
@@ -106,7 +125,7 @@
 
 ---
 
-### 7. `textContent` for All User-Controlled Output (Never `innerHTML`)
+### 8. `textContent` for All User-Controlled Output (Never `innerHTML`)
 
 **What we did**: Every token field and the translation string is inserted via `element.textContent = value`. No string concatenation into HTML. No `innerHTML`. See `renderResults()` in `popup/popup.js`.
 
@@ -122,11 +141,11 @@
 
 ---
 
-### 8. Two-Tier Validation: Structural vs. Semantic
+### 9. Two-Tier Validation: Structural vs. Semantic
 
-**What we did**: `validateResponse()` in `lib/analyzer.js` runs two distinct checks. First it checks structural validity — is `translation` present, is `tokens` an array? Then it checks semantic usefulness — is the tokens array non-empty? Each failure throws a `ValidationError` with a different message ("Incomplete response" vs. "No analysis returned"), which `popup.js` dispatches to a different user-facing string.
+**What we did**: `validateResponse()` in `lib/analyzer.js` runs two distinct checks. First it checks structural validity — is `translation` present, is `tokens` an array? Then it checks semantic usefulness — is the tokens array non-empty? Each failure throws a `ValidationError` with a different message.
 
-**Why**: A missing `tokens` field means the API returned something completely unexpected — a bug in the prompt or model. An empty `tokens` array means the model understood the schema but produced no analysis — a different failure, possibly from blank or unrecognizable input that slipped through client-side validation. Conflating them into one message hides useful signal from the user.
+**Why**: A missing `tokens` field means the API returned something completely unexpected — a bug in the prompt or model. An empty `tokens` array means the model understood the schema but produced no analysis — a different failure. Conflating them into one message hides useful signal from the user.
 
 **Alternatives considered**:
 | Approach | Why it wasn't chosen |
@@ -138,11 +157,11 @@
 
 ---
 
-### 9. Input Character Limit Enforced in JS, Not HTML `maxlength`
+### 10. Input Character Limit Enforced in JS, Not HTML `maxlength`
 
 **What we did**: The `<textarea>` in `popup.html` has no `maxlength` attribute. The 2000-character limit is enforced inside `validateInput()` in `lib/analyzer.js`, which throws a `ValidationError` that `popup.js` surfaces as a user-visible prompt.
 
-**Why**: HTML `maxlength` silently truncates the user's input the moment they type past the limit — the user has no warning that their text was cut. JS-side validation lets us reject the full input with a specific message ("Input too long — please keep it under 2000 characters"), keeping the user's original text intact so they can decide how to shorten it.
+**Why**: HTML `maxlength` silently truncates the user's input the moment they type past the limit — the user has no warning that their text was cut. JS-side validation lets us reject the full input with a specific message, keeping the user's original text intact so they can decide how to shorten it.
 
 **Alternatives considered**:
 | Approach | Why it wasn't chosen |
@@ -154,11 +173,11 @@
 
 ---
 
-### 10. Mocking AbortErrors with a Plain `Error` Instead of `DOMException`
+### 11. Mocking AbortErrors with a Plain `Error` Instead of `DOMException`
 
 **What we did**: In `tests/mocks/fetchMock.js`, `makeAbortError()` creates abort errors as `new Error('Aborted')` with `.name = 'AbortError'` set as an own property, rather than `new DOMException('Aborted', 'AbortError')`.
 
-**Why**: Two compounding problems made `DOMException` the wrong choice. First, `DOMException` is only a global in Node.js 18+; Node 16 throws `ReferenceError` at construction. Second, the original code wrapped the error in `Object.assign(new DOMException(...), { name: 'AbortError' })` — but `name` on a `DOMException` instance is a getter-only property on the prototype, so in strict mode (ES modules are always strict) the assign throws a `TypeError` before the `Promise.reject` is reached. The analyzer only checks `err.name === 'AbortError'` — it doesn't care whether the error is a real `DOMException` — so the minimal form that works everywhere is a plain `Error`.
+**Why**: Two compounding problems made `DOMException` the wrong choice. First, `DOMException` is only a global in Node.js 18+; Node 16 throws `ReferenceError` at construction. Second, wrapping in `Object.assign(new DOMException(...), { name: 'AbortError' })` throws a `TypeError` in strict mode — `name` on `DOMException` is a getter-only prototype property. Since `analyzer.js` only checks `err.name === 'AbortError'`, a plain `Error` with the right `.name` is correct and works everywhere.
 
 **Alternatives considered**:
 | Approach | Why it wasn't chosen |
@@ -167,15 +186,15 @@
 | `Object.assign(new DOMException(...), { name: 'AbortError' })` | Strict-mode `TypeError` — `name` is getter-only on the `DOMException` prototype |
 | Polyfill `globalThis.DOMException` in Jest setup | Adds test infrastructure for a problem that doesn't need the real type |
 
-**When you'd choose differently**: If the test needed to verify `err instanceof DOMException` (e.g., browser-specific behavior), you'd need the real type and would polyfill it in Jest's `setupFilesAfterFramework`. Since `analyzer.js` only checks `.name`, the duck-typed `Error` is correct.
+**When you'd choose differently**: If the test needed to verify `err instanceof DOMException`, you'd need the real type and would polyfill it. Since `analyzer.js` only checks `.name`, the duck-typed `Error` is correct.
 
 ---
 
-### 11. `connect-src` Must Be Explicit in a Chrome Extension CSP
+### 12. `connect-src` Must Be Explicit in a Chrome Extension CSP
 
 **What we did**: Added `connect-src https://api.anthropic.com` to the `extension_pages` CSP in `manifest.json`. Without it, every `fetch()` to the Anthropic API returned `TypeError: Failed to fetch` — even though `host_permissions` already listed the same origin.
 
-**Why**: `host_permissions` and CSP are two separate security layers in Chrome extensions. `host_permissions` controls what the extension is *allowed* to access from Chrome's perspective. The CSP `connect-src` controls what the popup *page* is allowed to fetch — it's enforced by the browser's content security policy engine, which doesn't consult `host_permissions`. `default-src 'self'` falls back to `connect-src 'self'`, silently blocking all cross-origin fetches with no warning until you open DevTools.
+**Why**: `host_permissions` and CSP are two separate security layers in Chrome extensions. `host_permissions` controls what the extension is *allowed* to access from Chrome's perspective. The CSP `connect-src` controls what the popup *page* is allowed to fetch — it's enforced by the browser's content security policy engine, which doesn't consult `host_permissions`. `default-src 'self'` falls back to `connect-src 'self'`, silently blocking all cross-origin fetches.
 
 **Alternatives considered**:
 | Approach | Why it wasn't chosen |
@@ -183,15 +202,80 @@
 | Remove CSP entirely | Weakens security by allowing inline scripts and external resource loading |
 | Rely on `host_permissions` alone | Doesn't satisfy `connect-src`; fetch still blocked at the CSP layer |
 
-**When you'd choose differently**: If your extension proxies all API calls through a service worker (not the popup), you'd add `connect-src` to the service worker's CSP instead. The popup CSP only covers extension pages.
+**When you'd choose differently**: If your extension proxies all API calls through a service worker (not the popup), you'd add `connect-src` to the service worker's CSP instead.
 
 ---
 
-### 12. CSS `display` Properties Override the HTML `hidden` Attribute
+### 13. Reduce Friction for Required External Setup Steps
 
-**What we did**: Added `[hidden] { display: none !important; }` as a global rule at the top of `popup.css`. Without it, the loading overlay was permanently visible because `.loading-overlay { display: flex; }` in the author stylesheet overrode the browser's built-in `[hidden]` rule.
+**What we did**: Added a "Get API key ↗" link directly in the Settings view that opens `console.anthropic.com/account/keys` in a new tab, placed inline next to the "Anthropic API Key" label.
 
-**Why**: The browser's default stylesheet sets `[hidden] { display: none }`, but author stylesheets take higher precedence. Any class that explicitly sets `display` will win over `[hidden]` silently — the element renders as if `hidden` isn't there. The `!important` on the `[hidden]` rule restores the expected behaviour: hidden elements are always hidden, regardless of what their class sets for `display`.
+**Why**: Every extra step between "installed extension" and "first successful use" is a dropout point. Putting the link at exactly the moment the user needs it — inside the settings input they're already filling out — eliminates the need to search for where to get the key.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Link in the README only | Not visible during actual use; users don't read READMEs |
+| Show link only on 401 error | Useful as a secondary signal, but better to surface it before the first failure |
+
+**When you'd choose differently**: If your extension auto-detects a key from the environment, the link is unnecessary. It's only valuable when setup is entirely manual.
+
+---
+
+### 14. Closed Shadow DOM for the Injected Overlay
+
+**What we did**: The context menu result panel is rendered inside a Shadow DOM with `mode: 'closed'` attached to a zero-size host `div` appended to `document.documentElement`. All styles are inlined inside the shadow root.
+
+**Why**: Two isolation problems need solving when injecting UI into arbitrary pages. First, the page's CSS can override your panel's styles. Shadow DOM creates a CSS boundary: page styles cannot penetrate it (and your styles don't leak out). Second, `mode: 'closed'` means `host.shadowRoot` returns `null` — no page script can reach in and read the overlay content or manipulate the close button.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Regular DOM injection | Page styles win; page JS can read overlay contents including any user data rendered |
+| `<iframe>` overlay | Works but creates a separate browsing context, complicates sizing/positioning, and may trigger CSP on the host page |
+| Shadow DOM `mode: 'open'` | Page JS can call `host.shadowRoot` and read rendered content — weaker isolation |
+
+**When you'd choose differently**: If you need the page to be able to interact with your injected widget via JS (e.g., a developer tool that exposes an API), use `mode: 'open'`. For user-facing overlays where isolation is the goal, always prefer `mode: 'closed'`.
+
+---
+
+### 15. Self-Contained Function Passed to `chrome.scripting.executeScript`
+
+**What we did**: `linguaRenderOverlay` in `background/service-worker.js` is defined as a top-level function that references only its `payload` parameter and native DOM APIs. It's passed to `chrome.scripting.executeScript` as `func: linguaRenderOverlay, args: [payload]`.
+
+**Why**: `executeScript` with `func:` serializes the function using `.toString()` and re-evaluates it in the target page's context. This means the function is completely detached from the service worker's module scope at execution time — any outer-scope variable or import reference will throw `ReferenceError`. Data is passed in via `args`, which Chrome serializes as JSON.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| Declarative content script in manifest | Loaded on every page matching the URL pattern — wastes resources when never used |
+| `files: ['overlay.js']` in `executeScript` | On-demand, but the file can't receive dynamic data at injection time without a separate message pass |
+
+**When you'd choose differently**: If the injected UI needs multiple functions, shared state, or more than ~100 lines, extract it to a dedicated content script file and use `chrome.tabs.sendMessage` to pass data after injection.
+
+---
+
+### 16. `activeTab` Permission Instead of Broad Host Permissions for Injection
+
+**What we did**: The `"activeTab"` permission is used (rather than `"host_permissions": ["<all_urls>"]`) to authorize `chrome.scripting.executeScript` for the context menu feature.
+
+**Why**: `activeTab` grants temporary access to the exact tab the user is currently interacting with — and only when they invoke the extension through a user gesture. The permission expires when the user switches tabs. Broad host permissions, by contrast, grant the extension permanent read/write access to every URL on install — Chrome Web Store reviews flag this, and users see a stronger permission warning.
+
+**Alternatives considered**:
+| Approach | Why it wasn't chosen |
+|----------|---------------------|
+| `host_permissions: ["<all_urls>"]` | Works but grants persistent access to all sites; triggers stronger install warning and CWS scrutiny |
+| `host_permissions: ["https://*/*"]` | Same problem, just scoped to HTTPS |
+
+**When you'd choose differently**: If you need to inject *without* a user gesture — for example, a content script that auto-highlights words on every page load — `activeTab` doesn't cover it. You'd need explicit `host_permissions` for those origins.
+
+---
+
+### 17. CSS `display` Properties Override the HTML `hidden` Attribute
+
+**What we did**: Added `[hidden] { display: none !important; }` as a global rule at the top of `popup.css`.
+
+**Why**: The browser's default stylesheet sets `[hidden] { display: none }`, but author stylesheets take higher precedence. Any class that explicitly sets `display` (e.g., `.loading-overlay { display: flex }`) silently wins over `[hidden]` — the element renders as if `hidden` isn't there. The `!important` restores expected behavior.
 
 **Alternatives considered**:
 | Approach | Why it wasn't chosen |
@@ -203,80 +287,25 @@
 
 ---
 
-### 14. Closed Shadow DOM for the Injected Overlay
-
-**What we did**: The context menu result panel is rendered inside a Shadow DOM with `mode: 'closed'` attached to a zero-size host `div` appended to `document.documentElement`. All styles are inlined inside the shadow root.
-
-**Why**: Two isolation problems need solving when injecting UI into arbitrary pages. First, the page's CSS can override your panel's styles — a site that sets `* { font-size: 12px !important }` will mangle your token cards. Shadow DOM creates a CSS boundary: page styles cannot penetrate it (and your styles don't leak out). Second, page JavaScript can interact with elements added to the regular DOM. `mode: 'closed'` means `host.shadowRoot` returns `null` — no page script can reach in and read the overlay content or manipulate the close button.
-
-**Alternatives considered**:
-| Approach | Why it wasn't chosen |
-|----------|---------------------|
-| Regular DOM injection | Page styles win; page JS can read overlay contents including any user data rendered |
-| `<iframe>` overlay | Works but creates a separate browsing context, complicates sizing/positioning, and may trigger CSP on the host page |
-| Shadow DOM `mode: 'open'` | Page JS can call `host.shadowRoot` and read rendered content — weaker isolation |
-
-**When you'd choose differently**: If you need the page to be able to *interact* with your injected widget via JS (e.g., a developer tool that exposes an API), use `mode: 'open'`. For user-facing overlays where isolation is the goal, always prefer `mode: 'closed'`.
-
----
-
-### 15. Self-Contained Function Passed to `chrome.scripting.executeScript`
-
-**What we did**: `linguaRenderOverlay` in `background/service-worker.js` is defined as a top-level function that references only its `payload` parameter and native DOM APIs. It's passed to `chrome.scripting.executeScript` as `func: linguaRenderOverlay, args: [payload]`.
-
-**Why**: `executeScript` with `func:` serializes the function using `.toString()` and re-evaluates it in the target page's context. This means the function is completely detached from the service worker's module scope at execution time — any outer-scope variable it references will be `undefined` in the page, and any import will throw a `ReferenceError`. The function must be entirely self-contained: no module imports, no references to service-worker constants, no closures. Data is passed in via `args`, which Chrome serializes as JSON and provides as function arguments.
-
-**Alternatives considered**:
-| Approach | Why it wasn't chosen |
-|----------|---------------------|
-| Declarative content script (`"content_scripts"` in manifest) | Loaded on every page that matches the URL pattern — wastes resources even when never used; requires manifest declaration |
-| `files: ['overlay.js']` in `executeScript` | On-demand, but the file must be bundled with the extension and can't receive dynamic data at injection time without a separate message pass |
-
-**When you'd choose differently**: If the injected UI is complex enough to need multiple functions, shared state, or more than ~100 lines, extract it to a dedicated content script file and use `chrome.tabs.sendMessage` to pass data after injection. For a single self-contained panel, the `func` approach keeps related code co-located.
-
----
-
-### 16. `activeTab` Permission Instead of Broad Host Permissions for Injection
-
-**What we did**: The `"activeTab"` permission is used (rather than `"host_permissions": ["<all_urls>"]`) to authorize `chrome.scripting.executeScript` for the context menu feature. No broad host permissions were added.
-
-**Why**: `activeTab` grants temporary access to the exact tab the user is currently interacting with — and only when they invoke the extension through a user gesture (clicking a context menu item counts). The permission expires when the user switches tabs. This is the principle of least privilege: the extension gets access to exactly one page, for exactly one interaction, initiated explicitly by the user. Broad host permissions, by contrast, grant the extension permanent read/write access to every URL on install — Chrome Web Store reviews flag this, and users see a stronger permission warning at install time.
-
-**Alternatives considered**:
-| Approach | Why it wasn't chosen |
-|----------|---------------------|
-| `host_permissions: ["<all_urls>"]` | Works but grants persistent access to all sites; triggers stronger install warning and CWS scrutiny |
-| `host_permissions: ["https://*/*"]` | Same problem, just scoped to HTTPS |
-
-**When you'd choose differently**: If you need to inject *without* a user gesture — for example, a content script that auto-highlights words on every page load — `activeTab` doesn't cover it. You'd need explicit `host_permissions` for those origins, which comes with broader user-visible permissions.
-
----
-
-### 13. Reduce Friction for Required External Setup Steps
-
-**What we did**: Added a "Get API key ↗" link directly in the Settings view that opens `console.anthropic.com/account/keys` in a new tab, placed inline next to the "Anthropic API Key" label.
-
-**Why**: The extension fails silently (or with an opaque 401) if the user doesn't have a key. Every extra step between "installed extension" and "first successful use" is a dropout point. Putting the link at exactly the moment the user needs it — inside the settings input they're already filling out — eliminates the need to search for where to get the key.
-
-**Alternatives considered**:
-| Approach | Why it wasn't chosen |
-|----------|---------------------|
-| Link in the README only | Not visible during actual use; users don't read READMEs |
-| Show link only on 401 error | Useful as a secondary signal, but better to surface it before the first failure |
-
-**When you'd choose differently**: If your extension auto-detects a key from the environment (e.g., a desktop app reading `~/.config`), the link is unnecessary. It's only valuable when setup is entirely manual.
-
----
-
 ## Concepts to Know
 
 ### ES Modules in a Chrome Extension (No Bundler)
 
 **What it is**: Native JavaScript modules using `import`/`export`, loaded by declaring `<script type="module" src="popup.js">` in `popup.html`. The browser handles dependency resolution without webpack or esbuild.
 
-**Where we used it**: `popup.html` loads `popup.js` as a module; `popup.js` imports `analyzeText`, error classes, and `validateInput` from `../lib/analyzer.js`.
+**Where we used it**: `popup.html` loads `popup.js` as a module; `popup.js` imports `analyzeText`, error classes, and `validateInput` from `../lib/analyzer.js`. Both popup and service worker share `lib/errors/index.js`.
 
 **Why it matters**: You get code separation, named exports, and strict mode for free. Without modules, all code would have to live in one file or share globals. Many MV3 tutorials still show bundlers — you don't need one unless you have npm dependencies in your source.
+
+---
+
+### LLM Tool Use / Function Calling
+
+**What it is**: A mode where the model outputs structured data matching a declared JSON schema instead of free text. The caller declares the schema upfront; the API guarantees the response will conform to it. Claude always invokes the named tool when `tool_choice: { type: 'tool' }` is set.
+
+**Where we used it**: `ANALYSIS_TOOL` in `lib/analyzer.js` — the tool schema defines every field (`translation`, `tokens[]`, required/optional), and the response is extracted from `content.find(b => b.type === 'tool_use').input` rather than parsed from text.
+
+**Why it matters**: Without tool use, you're relying on prompt discipline — the model might add prose, wrap JSON in markdown, or change format between versions. Tool use makes the output format a hard contract enforced at the API level.
 
 ---
 
@@ -284,7 +313,7 @@
 
 **What it is**: Custom classes that extend the built-in `Error`, giving each error a distinct type that can be checked with `instanceof`. Each class can carry extra fields (e.g., `ApiError` carries `.status`).
 
-**Where we used it**: `lib/analyzer.js` defines all five error classes; `popup.js` dispatches on them in `handleError()`.
+**Where we used it**: `lib/errors/index.js` defines all five error classes; they're re-exported from `lib/analyzer.js`; `popup.js` dispatches on them in `handleError()`.
 
 **Why it matters**: Without typed errors, the UI layer must interpret raw error messages or numeric codes — both are fragile. `instanceof` dispatch is explicit, testable, and survives refactoring. It's the same pattern used by Node.js, Axios, and most mature JS libraries.
 
@@ -294,7 +323,7 @@
 
 **What it is**: `AbortController` is a Web API that lets you attach a cancellation signal to any async operation that supports it. `fetch()` accepts a `signal` option; calling `controller.abort()` cancels the request immediately.
 
-**Where we used it**: `analyzeText()` in `lib/analyzer.js` — signal attached to `fetch()`, `abort()` called after 10 seconds via `setTimeout`.
+**Where we used it**: `analyzeText()` in `lib/analyzer.js` — signal attached to `fetch()`, `abort()` called after 30 seconds via `setTimeout`.
 
 **Why it matters**: Without aborting, a timed-out request keeps the connection open, consuming the browser's limited connection pool and memory until the server responds or the tab closes.
 
@@ -322,21 +351,21 @@
 
 ### Specification Drift and the Single Source of Truth for Error Messages
 
-**What it is**: When the same user-facing string appears in multiple documents (the feature spec, the API contract, and the task description), they will drift out of sync over time. In this feature, four of the seven error messages in `popup.js` had diverged from the spec's wording by the time tasks were generated — shorter, vaguer versions appeared in the task descriptions.
+**What it is**: When the same user-facing string appears in multiple documents (the feature spec, the API contract, and the task description), they will drift out of sync over time.
 
-**Where we used it**: The exact error messages for HTTP 401, 429, 5xx, and network errors are defined in both `spec.md` (Error Handling section) and `contracts/ai-prompt-contract.md`. `tasks.md` T020 now references these with the verbatim wording. The canonical source is `contracts/ai-prompt-contract.md`.
+**Where we used it**: The exact error messages for HTTP 401, 429, 5xx, and network errors are defined in both `spec.md` and `contracts/ai-prompt-contract.md`. The canonical source is `contracts/ai-prompt-contract.md`.
 
-**Why it matters**: User-facing strings in specs are often written by product/UX stakeholders, not just developers. If the implementation drifts to shorter or vaguer wording, the user experience degrades in ways that don't show up in functional tests — the error still appears, just with the wrong message. Treat the contract as the authority, and copy verbatim from it during implementation.
+**Why it matters**: User-facing strings in specs are often written by product/UX stakeholders, not just developers. If the implementation drifts to shorter or vaguer wording, the user experience degrades in ways that don't show up in functional tests.
 
 ---
 
 ### `Object.assign` and Getter-Only Prototype Properties in Strict Mode
 
-**What it is**: `Object.assign(target, source)` uses `[[Set]]` — the same path as a plain `=` assignment. If a property exists on the target's prototype chain as a getter with no setter, strict mode throws a `TypeError` when `[[Set]]` fires. ES modules are always strict, so this failure is a hard crash in module code, even though the same line works silently in a sloppy script.
+**What it is**: `Object.assign(target, source)` uses `[[Set]]` — the same path as a plain `=` assignment. If a property exists on the target's prototype chain as a getter with no setter, strict mode throws a `TypeError`. ES modules are always strict.
 
-**Where we used it**: This was the root cause of the failing `makeAbortError()` mock. `DOMException.prototype.name` is getter-only; `Object.assign(new DOMException(...), { name: 'AbortError' })` threw before the `Promise.reject` ran, producing a synchronous `TypeError` that the analyzer's catch block classified as a `NetworkError`.
+**Where we used it**: This was the root cause of the failing `makeAbortError()` mock. `DOMException.prototype.name` is getter-only; the `Object.assign` approach threw before the `Promise.reject` ran.
 
-**Why it matters**: `Object.assign` looks like a safe way to merge properties, but it hides a pitfall with accessor-defined properties on built-in prototypes. Whenever you're patching a property onto a DOM type, Error subclass, or other native object, verify the property is writable before using `Object.assign` — or use `Object.defineProperty` explicitly if you need to set a non-writable property.
+**Why it matters**: `Object.assign` looks like a safe way to merge properties, but it hides a pitfall with accessor-defined properties on built-in prototypes. Whenever you're patching a property onto a DOM type or Error subclass, verify the property is writable before using `Object.assign`.
 
 ---
 
@@ -346,7 +375,7 @@
 
 **Where we used it**: The context menu overlay in `background/service-worker.js` — `linguaRenderOverlay` attaches a closed shadow root to the host `div` and puts the entire panel inside it.
 
-**Why it matters**: Web components and injected UIs live inside pages they didn't control. Without Shadow DOM, any `*` reset, font override, or color declaration on the host page can silently break your injected panel. Shadow DOM gives you a guaranteed visual environment without needing to scope every selector with a long prefix.
+**Why it matters**: Web components and injected UIs live inside pages they didn't control. Without Shadow DOM, any `*` reset, font override, or color declaration on the host page can silently break your injected panel.
 
 ---
 
@@ -356,7 +385,7 @@
 
 **Where we used it**: `inject()` in `background/service-worker.js` passes `linguaRenderOverlay` as the `func`. Payload data (analysis results or loading state) is passed via `args`, which Chrome JSON-serializes.
 
-**Why it matters**: This is the single most surprising constraint in the context menu implementation. Code that works perfectly in the service worker will throw `ReferenceError: X is not defined` in the injected function if `X` is imported from a module. The function boundary is a hard serialization wall — treat it the same way you'd treat code that's going to be `JSON.stringify`'d and `eval`'d elsewhere.
+**Why it matters**: Code that works perfectly in the service worker will throw `ReferenceError: X is not defined` in the injected function if `X` is imported from a module. The function boundary is a hard serialization wall.
 
 ---
 
@@ -364,9 +393,9 @@
 
 **What it is**: An API key is a bearer token — whoever has it can make API calls billed to your account with no additional authentication. Exposing it in a chat log, a screenshot, a commit, or a public URL is equivalent to giving someone your password.
 
-**Where it applies**: Anywhere a key is typed, pasted, copied, or displayed — DevTools console output, chat messages, git diffs, log files. The extension itself is designed correctly (key stored in `chrome.storage.local`, never logged, displayed only as `type="password"`), but the *user's workflow* around the key matters just as much.
+**Where it applies**: Anywhere a key is typed, pasted, copied, or displayed — DevTools console output, chat messages, git diffs, log files. The extension stores the key correctly (`chrome.storage.local`, never logged, displayed only as `type="password"`), but the user's workflow around the key matters just as much.
 
-**Why it matters**: Exposed keys are scraped automatically by bots monitoring public channels. A key leaked in a chat message should be considered compromised immediately — revoke it at `console.anthropic.com/account/keys` and generate a new one. The old key may already have been used.
+**Why it matters**: Exposed keys are scraped automatically by bots monitoring public channels. A key leaked in a chat message should be considered compromised immediately — revoke it at `console.anthropic.com/account/keys` and generate a new one.
 
 ---
 
@@ -380,7 +409,9 @@ The popup owns its own UI state. The service worker owns the context menu lifecy
 popup.html  (entry point, loads as ES module)
   └── popup.js  (UI state: views, events, rendering)
         ├── lib/analyzer.js  (fetch, parse, validate, classify errors)
+        │     ├── lib/errors/index.js  (typed error classes)
         │     └── https://api.anthropic.com/v1/messages
+        │           └── tool_choice: linguistic_analysis  ← structured output
         └── chrome.storage.local  (API key)
 
 background/service-worker.js  (ES module; context menu + page injection)
@@ -401,10 +432,13 @@ background/service-worker.js  (ES module; context menu + page injection)
 | Service worker | Background script registered in `manifest.json`; required by MV3 even if empty; runs in a separate thread from the popup |
 | `host_permissions` | Manifest field that grants the extension permission to `fetch()` a specific external origin |
 | BYOAK | "Bring Your Own API Key" — user supplies and stores their own credentials; the app has no shared key |
+| Tool use / function calling | Claude API mode where the model fills a declared JSON schema instead of returning free text; response is in `content[].type === 'tool_use'` |
 | Lemma | The base dictionary form of a word (e.g., "running" → "run", "languages" → "language") |
 | POS | Part of speech — grammatical category of a word (noun, verb, adj, etc.) |
+| Romanization | Latin-script transliteration of non-Latin text (Korean: Revised Romanization, Chinese: Pinyin, Japanese: Hepburn) |
 | `AbortController` | Web API for cancelling in-flight async operations like `fetch()` |
 | Shadow DOM | Browser-native DOM encapsulation; `mode: 'closed'` prevents page JS/CSS from accessing the shadow tree |
 | `activeTab` | Chrome permission that grants temporary access to the active tab on user gesture — no persistent or broad site access |
 | `chrome.scripting.executeScript` | MV3 API for injecting a function or file into a tab; `func:` mode serializes the function — outer-scope variables are unavailable inside |
 | Context menu | The right-click menu in Chrome; `chrome.contextMenus.create` registers extension items that appear when `contexts: ['selection']` matches |
+| Prompt caching | Anthropic API feature that caches tokenized content (marked with `cache_control: ephemeral`) for up to 5 minutes, reducing per-call latency and cost |

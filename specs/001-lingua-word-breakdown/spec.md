@@ -87,7 +87,7 @@ A learner is reading a foreign-language article in their browser. They highlight
 - **FR-002**: The extension MUST send the submitted text to an AI language model and receive a structured linguistic analysis response.
 - **FR-003**: The response MUST include a natural English translation of the full input sentence.
 - **FR-004**: The response MUST include one token entry per original word, preserving input order.
-- **FR-005**: Each token entry MUST contain: the exact surface word form, the base lemma, a simple POS tag, and a short English meaning gloss.
+- **FR-005**: Each token entry MUST contain: the exact surface word form, the base lemma, a simple POS tag, and a short English meaning gloss. Each token entry MAY additionally contain romanization, pronunciation, and particles (see FR-026–FR-028).
 - **FR-006**: The extension MUST display the translation and token breakdown clearly in the popup UI.
 - **FR-007**: The extension MUST reject empty or whitespace-only input and prompt the user to enter text.
 - **FR-008**: The extension MUST show a loading indicator while the analysis is in progress.
@@ -95,7 +95,7 @@ A learner is reading a foreign-language article in their browser. They highlight
 - **FR-010**: The POS tags MUST use a consistent, simple vocabulary: noun, verb, adj, adv, pron, prep, conj, det, num, punct, or other.
 - **FR-011**: Each meaning gloss MUST be concise (maximum one short phrase, ideally ≤ 5 words).
 - **FR-012**: The extension MUST enforce a 2000-character input limit with user warning.
-- **FR-013**: The extension MUST implement request timeouts at 10 seconds and display a clear timeout error message.
+- **FR-013**: The extension MUST implement request timeouts at 30 seconds and display a clear timeout error message ("Request took too long (30s). Please try again.").
 - **FR-014**: The extension MUST validate that API responses contain all required fields (translation, tokens array with complete token objects).
 - **FR-015**: The extension MUST reject responses larger than 50 KB or with more than 500 tokens and display an error.
 - **FR-016**: The extension MUST sanitize all displayed content by inserting user-provided text via DOM `textContent` (never `innerHTML`).
@@ -108,12 +108,15 @@ A learner is reading a foreign-language article in their browser. They highlight
 - **FR-023**: The injected overlay MUST be isolated inside a closed Shadow DOM (`attachShadow({ mode: 'closed' })`) to prevent host-page CSS from affecting its appearance and host-page JavaScript from reading its contents.
 - **FR-024**: The injected overlay MUST render all analysis content (translation, token fields) via `textContent`, never `innerHTML`, consistent with FR-016.
 - **FR-025**: If the active tab is not injectable (e.g., `chrome://` pages), the context menu activation MUST fail silently without surfacing a browser error to the user.
+- **FR-026**: Each token entry MAY include a `romanization` field — a standard Latin-script transliteration of the surface word using the language's conventional system (Korean: Revised Romanization, Chinese: Pinyin, Japanese: Hepburn). This field is omitted for Latin-script languages.
+- **FR-027**: Each token entry MAY include a `pronunciation` field — an IPA transcription of the word's actual pronunciation. Included for non-Latin-script languages and Latin-script words with non-obvious pronunciation; omitted otherwise.
+- **FR-028**: Each token entry MAY include a `particles` field — an ordered array of grammatical markers attached to the word. Each particle carries a `form` (exact attached marker, e.g. `-는`), a `type` (one of: `topic`, `subject`, `object`, `sentence-end`, `other-particle`), and a short English `meaning`. Applies primarily to agglutinative languages such as Korean; topic markers (-은/-는), subject markers (-이/-가), object markers (-을/-를), and sentence-ending forms (-이네, -이까, -이다, -이네다) are explicitly supported types. This field is omitted when no markers are attached.
 
 ### Key Entities
 
 - **AnalysisRequest**: The raw text string submitted by the user.
 - **Translation**: A natural English string representing the full meaning of the input.
-- **Token**: One word from the input, carrying surface form (`word`), base form (`lemma`), part-of-speech (`pos`), and English gloss (`meaning`).
+- **Token**: One word from the input, carrying: surface form (`word`), base form (`lemma`), part-of-speech (`pos`), and English gloss (`meaning`). Optional fields: `romanization` (Latin transliteration), `pronunciation` (IPA transcription), and `particles` (array of attached grammatical markers, each with `form`, `type`, and `meaning`).
 - **AnalysisResult**: The structured response containing `translation` (string) and `tokens` (ordered list of Token).
 
 ## Success Criteria *(mandatory)*
@@ -152,8 +155,8 @@ A learner is reading a foreign-language article in their browser. They highlight
 
 ### Timeout & Retry
 
-- **Request timeout**: 10 seconds per request (includes Claude API call).
-- **Timeout handling**: User sees "Request took too long. Please try again." with Retry button.
+- **Request timeout**: 30 seconds per request (includes Claude API call). Raised from 10 s to accommodate the larger response payloads introduced by romanization, pronunciation, and particle fields.
+- **Timeout handling**: User sees "Request took too long (30s). Please try again." with Retry button.
 - **Manual retry**: User can click Retry button unlimited times. No automatic retries.
 - **Rate limiting (user side)**: Minimum 1-second wait between submit button clicks to prevent rapid-fire requests.
 

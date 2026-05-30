@@ -1,12 +1,5 @@
-import {
-  analyzeText,
-  validateInput,
-  TimeoutError,
-  ApiError,
-  NetworkError,
-  JsonError,
-  ValidationError,
-} from '../lib/analyzer.js';
+import { analyzeText, validateInput } from '../lib/analyzer.js';
+import { TimeoutError, ApiError, NetworkError, JsonError, ValidationError } from '../lib/errors/index.js';
 
 const RATE_LIMIT_MS = 1000;
 let lastSubmitTime = 0;
@@ -93,8 +86,37 @@ function renderResults(data) {
     meaningEl.textContent = token.meaning;
 
     card.appendChild(wordEl);
+
+    if (token.romanization) {
+      const romaEl = document.createElement('span');
+      romaEl.className = 'token-romanization';
+      romaEl.textContent = token.romanization;
+      card.appendChild(romaEl);
+    }
+
+    if (token.pronunciation) {
+      const ipaEl = document.createElement('span');
+      ipaEl.className = 'token-pronunciation';
+      ipaEl.textContent = token.pronunciation;
+      card.appendChild(ipaEl);
+    }
+
     card.appendChild(lemmaEl);
     card.appendChild(badge);
+
+    if (token.particles && token.particles.length > 0) {
+      const particlesEl = document.createElement('div');
+      particlesEl.className = 'token-particles';
+      for (const p of token.particles) {
+        const pBadge = document.createElement('span');
+        pBadge.className = `particle-badge particle-${p.type}`;
+        pBadge.textContent = p.form;
+        pBadge.setAttribute('title', p.meaning);
+        particlesEl.appendChild(pBadge);
+      }
+      card.appendChild(particlesEl);
+    }
+
     card.appendChild(meaningEl);
     tokensGrid.appendChild(card);
   }
