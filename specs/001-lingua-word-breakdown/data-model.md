@@ -24,14 +24,42 @@ Represents the user's submitted input.
 
 Represents one word from the input with its linguistic properties.
 
-| Field     | Type   | Constraints                                                              |
-|-----------|--------|--------------------------------------------------------------------------|
-| `word`    | string | Exact surface form from input; non-empty                                 |
-| `lemma`   | string | Base dictionary form; non-empty                                          |
-| `pos`     | string | One of: noun, verb, adj, adv, pron, prep, conj, det, num, punct, other  |
-| `meaning` | string | Short English gloss; max ~5 words                                        |
+| Field           | Type            | Required?                         | Constraints                                                             |
+|-----------------|-----------------|-----------------------------------|-------------------------------------------------------------------------|
+| `word`          | string          | Always                            | Exact surface form from input; non-empty                                |
+| `lemma`         | string          | Always                            | Base dictionary form; non-empty                                         |
+| `pos`           | string          | Always                            | One of: noun, verb, adj, adv, pron, prep, conj, det, num, punct, other |
+| `meaning`       | string          | Always                            | Short English gloss; max ~5 words                                       |
+| `romanization`  | string          | Non-Latin-script words            | Latin transliteration (Revised Romanization / Pinyin / Hepburn)        |
+| `pronunciation` | string          | Non-Latin-script words            | IPA transcription of actual pronunciation                               |
+| `particles`     | Particle[]      | When case particles are attached  | Korean 조사 — see Particle entity below                                 |
+| `endings`       | Ending[]        | When verb/adj endings are attached| Korean 어미 — see Ending entity below                                   |
 
 **Ordering**: Tokens appear in the same order as words in the original input.
+
+---
+
+### Particle
+
+A Korean case particle (조사) attached to a noun or pronoun.
+
+| Field     | Type   | Constraints                                                                          |
+|-----------|--------|--------------------------------------------------------------------------------------|
+| `form`    | string | Exact particle as attached (e.g. `는`, `이랑`)                                        |
+| `type`    | string | One of: `topic`, `subject`, `object`, `sentence-end`, `other-particle`              |
+| `meaning` | string | Short English explanation of the particle's grammatical role                         |
+
+---
+
+### Ending
+
+A Korean grammatical ending (어미) attached to a verb or adjective stem.
+
+| Field     | Type   | Constraints                                                                                      |
+|-----------|--------|--------------------------------------------------------------------------------------------------|
+| `form`    | string | Exact ending as attached (e.g. `고`, `는`, `든`)                                                  |
+| `type`    | string | One of: `connective`, `attributive`, `nominal`, `concessive`, `sentence-final`, `other-ending`  |
+| `meaning` | string | Short English explanation of what the ending expresses                                           |
 
 ---
 
@@ -53,7 +81,11 @@ The structured response returned by the AI model.
       "word": "string",
       "lemma": "string",
       "pos": "string",
-      "meaning": "string"
+      "meaning": "string",
+      "romanization": "string (non-Latin scripts)",
+      "pronunciation": "string (non-Latin scripts)",
+      "particles": [{ "form": "string", "type": "string", "meaning": "string" }],
+      "endings":   [{ "form": "string", "type": "string", "meaning": "string" }]
     }
   ]
 }

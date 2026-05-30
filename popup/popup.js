@@ -103,25 +103,40 @@ function renderResults(data) {
 
     card.appendChild(lemmaEl);
     card.appendChild(badge);
-
-    if (token.particles && token.particles.length > 0) {
-      const particlesEl = document.createElement('div');
-      particlesEl.className = 'token-particles';
-      for (const p of token.particles) {
-        const pBadge = document.createElement('span');
-        pBadge.className = `particle-badge particle-${p.type}`;
-        pBadge.textContent = p.form;
-        pBadge.setAttribute('title', p.meaning);
-        particlesEl.appendChild(pBadge);
-      }
-      card.appendChild(particlesEl);
-    }
-
     card.appendChild(meaningEl);
     tokensGrid.appendChild(card);
+
+    for (const p of (token.particles ?? [])) {
+      tokensGrid.appendChild(buildMorphemeCard(p.form, `particle-badge particle-${p.type}`, p.type, p.meaning));
+    }
+    for (const e of (token.endings ?? [])) {
+      tokensGrid.appendChild(buildMorphemeCard(`-${e.form}`, `ending-badge ending-${e.type}`, e.type, e.meaning));
+    }
   }
 
   resultsEl.hidden = false;
+}
+
+function buildMorphemeCard(form, badgeClass, typeLabel, meaning) {
+  const card = document.createElement('div');
+  card.className = 'token-card morpheme-card';
+
+  const formEl = document.createElement('span');
+  formEl.className = 'token-word';
+  formEl.textContent = form;
+
+  const typeBadge = document.createElement('span');
+  typeBadge.className = badgeClass;
+  typeBadge.textContent = typeLabel;
+
+  const meaningEl = document.createElement('span');
+  meaningEl.className = 'token-meaning';
+  meaningEl.textContent = meaning;
+
+  card.appendChild(formEl);
+  card.appendChild(typeBadge);
+  card.appendChild(meaningEl);
+  return card;
 }
 
 function handleError(err) {

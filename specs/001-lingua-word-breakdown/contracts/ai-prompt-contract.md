@@ -1,6 +1,6 @@
 # AI Prompt Contract: Linguistic Analysis
 
-**Version**: 2.0 | **Date**: 2026-05-29
+**Version**: 3.0 | **Date**: 2026-05-30
 
 This document defines the exact structure of requests sent to the Claude API and the expected
 response shape. All values here are authoritative and must stay in sync with `lib/analyzer.js`.
@@ -65,9 +65,10 @@ For each word:
 - lemma: base/dictionary form (Korean: stem without attached particles)
 - pos: noun, verb, adj, adv, pron, prep, conj, det, num, punct, or other
 - meaning: short English gloss (5 words max)
-- romanization: Latin transliteration for non-Latin scripts (Korean: Revised Romanization, Chinese: Pinyin, Japanese: Hepburn). Omit for Latin-script words.
-- pronunciation: IPA transcription for non-Latin scripts and non-obvious pronunciations. Omit otherwise.
-- particles: Korean grammatical markers only — topic (-은/-는), subject (-이/-가), object (-을/-를), sentence-end (-이네/-이까/-이다/-이네다). Omit if none.
+- romanization: REQUIRED for every non-Latin-script word — Korean: Revised Romanization, Chinese: Pinyin, Japanese: Hepburn. Omit only for words already in the Latin alphabet.
+- pronunciation: REQUIRED IPA transcription for every non-Latin-script word. Omit only for Latin-script words with completely transparent pronunciation.
+- particles: REQUIRED for Korean nouns/pronouns with an attached case particle (조사). 은/는 → topic, 이/가 → subject, 을/를 → object, sentence-final copula endings → sentence-end, others → other-particle. Omit only when no particle is attached.
+- endings: REQUIRED for Korean verbs and adjectives with an attached grammatical ending (어미). -고/-아서/-어서/-면/-지만/-는데/-려고 → connective; -는/-은/-ㄴ/-을/-ㄹ/-던 modifying a noun → attributive; -기/-음/-ㅁ → nominal; -든/-든지/-거나 → concessive; -다/-요/-네/-지/-ㄹ게/-아/-어 as sentence-final → sentence-final; anything else → other-ending. Omit only for words with no attached ending.
 ```
 
 ### Prompt Caching
@@ -101,22 +102,36 @@ cache window (e.g., multiple analyses in a single popup session).
             "lemma":         { "type": "string" },
             "pos":           { "type": "string" },
             "meaning":       { "type": "string" },
-            "romanization":  { "type": "string" },
-            "pronunciation": { "type": "string" },
+            "romanization":  { "type": "string", "description": "REQUIRED for every Korean, Chinese, or Japanese word: Revised Romanization / Pinyin / Hepburn." },
+            "pronunciation": { "type": "string", "description": "REQUIRED IPA transcription for every Korean, Chinese, or Japanese word." },
             "particles": {
               "type": "array",
+              "description": "REQUIRED for Korean nouns/pronouns with an attached case particle (조사).",
               "items": {
                 "type": "object",
                 "properties": {
-                  "form":    { "type": "string" },
-                  "type":    { "type": "string" },
-                  "meaning": { "type": "string" }
+                  "form":    { "type": "string", "description": "The particle exactly as attached (e.g. 는, 가, 를)" },
+                  "type":    { "type": "string", "description": "topic | subject | object | sentence-end | other-particle" },
+                  "meaning": { "type": "string", "description": "Brief English explanation of what the particle does" }
+                },
+                "required": ["form", "type", "meaning"]
+              }
+            },
+            "endings": {
+              "type": "array",
+              "description": "REQUIRED for Korean verbs/adjectives with an attached grammatical ending (어미).",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "form":    { "type": "string", "description": "The ending as attached (e.g. 고, 는, 든, 아서)" },
+                  "type":    { "type": "string", "description": "connective | attributive | nominal | concessive | sentence-final | other-ending" },
+                  "meaning": { "type": "string", "description": "Brief English explanation of what this ending expresses" }
                 },
                 "required": ["form", "type", "meaning"]
               }
             }
           },
-          "required": ["word", "lemma", "pos", "meaning"]
+          "required": ["word", "lemma", "pos", "meaning", "romanization", "pronunciation"]
         }
       }
     },
@@ -136,15 +151,23 @@ cache window (e.g., multiple analyses in a single popup session).
 | `pos`     | string | POS tag — one of: `noun verb adj adv pron prep conj det num punct other` |
 | `meaning` | string | Short English gloss, max 5 words |
 
+**Required for non-Latin-script tokens:**
+
+| Field           | Type   | Notes |
+|-----------------|--------|-------|
+| `romanization`  | string | Korean: Revised Romanization; Chinese: Pinyin; Japanese: Hepburn |
+| `pronunciation` | string | IPA transcription |
+
 **Optional token fields:**
 
-| Field           | Type            | When included | Notes |
-|-----------------|-----------------|---------------|-------|
-| `romanization`  | string          | Non-Latin-script languages only | Korean: Revised Romanization; Chinese: Pinyin; Japanese: Hepburn |
-| `pronunciation` | string          | Non-Latin scripts and non-obvious Latin pronunciations | IPA transcription |
-| `particles`     | array of object | Agglutinative languages (primarily Korean) when markers are attached | Each particle has `form` (exact marker), `type` (see below), `meaning` |
+| Field       | Type            | When included | Notes |
+|-------------|-----------------|---------------|-------|
+| `particles` | array of object | Korean nouns/pronouns with attached 조사 | Each entry: `form`, `type`, `meaning` |
+| `endings`   | array of object | Korean verbs/adjectives with attached 어미 | Each entry: `form`, `type`, `meaning` |
 
 **Valid `particles[].type` values:** `topic`, `subject`, `object`, `sentence-end`, `other-particle`
+
+**Valid `endings[].type` values:** `connective`, `attributive`, `nominal`, `concessive`, `sentence-final`, `other-ending`
 
 **Valid `pos` values:** `noun`, `verb`, `adj`, `adv`, `pron`, `prep`, `conj`, `det`, `num`, `punct`, `other`
 
@@ -194,11 +217,34 @@ const result = validateResponse(toolUse.input);
     {
       "word": "저는", "lemma": "저", "pos": "pron", "meaning": "I (polite)",
       "romanization": "jeo-neun", "pronunciation": "t͡ɕʌnɯn",
-      "particles": [{ "form": "-는", "type": "topic", "meaning": "topic marker" }]
+      "particles": [{ "form": "는", "type": "topic", "meaning": "topic marker" }]
     },
     {
       "word": "학생이에요", "lemma": "학생", "pos": "noun", "meaning": "student",
-      "romanization": "haksaeng-i-e-yo", "pronunciation": "hak̚s͈ɛŋieɾo"
+      "romanization": "haksaeng-i-e-yo", "pronunciation": "hak̚s͈ɛŋieɾo",
+      "endings": [{ "form": "이에요", "type": "sentence-final", "meaning": "polite present tense copula" }]
+    }
+  ]
+}
+```
+
+**Example** (input: `"설레고 좋다"`):
+
+`toolUse.input`:
+
+```json
+{
+  "translation": "It makes my heart flutter and is good.",
+  "tokens": [
+    {
+      "word": "설레고", "lemma": "설레다", "pos": "verb", "meaning": "heart flutters",
+      "romanization": "seolle-go", "pronunciation": "sʌl.le.ɡo",
+      "endings": [{ "form": "고", "type": "connective", "meaning": "connects clauses (and)" }]
+    },
+    {
+      "word": "좋다", "lemma": "좋다", "pos": "adj", "meaning": "good, nice",
+      "romanization": "jota", "pronunciation": "tɕo.ta",
+      "endings": [{ "form": "다", "type": "sentence-final", "meaning": "plain form sentence-final ending" }]
     }
   ]
 }
@@ -240,6 +286,7 @@ const result = validateResponse(toolUse.input);
 | Token missing required field | `!token.word \|\| !token.lemma \|\| !token.pos \|\| !token.meaning` | "Incomplete analysis (missing field). Please retry." | Log field name and token index |
 | Invalid POS tag | `pos` not in `VALID_POS` set | (No error shown to user) | `console.warn`; silently correct to `'other'` |
 | Invalid particle type | `particles[].type` not in `VALID_PARTICLE_TYPES` | (No error shown to user) | `console.warn`; silently correct to `'other-particle'` |
+| Invalid ending type | `endings[].type` not in `VALID_ENDING_TYPES` | (No error shown to user) | `console.warn`; silently correct to `'other-ending'` |
 | Token count mismatch | `tokens.length !== inputWordCount` | (No error shown; results displayed) | `console.warn`; accept as-is |
 | Optional field malformed | `romanization` / `pronunciation` present but not a non-empty string | (No error shown) | Delete the field; continue |
 

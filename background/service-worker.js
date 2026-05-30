@@ -108,7 +108,10 @@ function linguaRenderOverlay(payload) {
       background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;
       padding: 8px; display: flex; flex-direction: column; gap: 3px;
     }
+    .token-card.morpheme-card { background: #fff; border-style: dashed; }
     .token-word { font-size: 15px; font-weight: 700; word-break: break-word; }
+    .token-romanization { font-size: 11px; color: #4f46e5; font-style: italic; word-break: break-word; }
+    .token-pronunciation { font-size: 11px; color: #6b7280; word-break: break-word; }
     .token-lemma { font-size: 12px; font-style: italic; color: #6b7280; word-break: break-word; }
     .token-meaning { font-size: 12px; margin-top: 2px; word-break: break-word; }
     .pos-badge {
@@ -127,6 +130,23 @@ function linguaRenderOverlay(payload) {
     .pos-num   { background: #fee2e2; color: #991b1b; }
     .pos-punct { background: #f3f4f6; color: #9ca3af; }
     .pos-other { background: #f3f4f6; color: #6b7280; }
+    .token-particles, .token-endings { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 1px; }
+    .particle-badge, .ending-badge {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 1px 5px; border-radius: 3px; letter-spacing: 0.02em;
+      cursor: default; width: fit-content;
+    }
+    .particle-topic        { background: #e0f2fe; color: #075985; }
+    .particle-subject      { background: #d1fae5; color: #065f46; }
+    .particle-object       { background: #fef3c7; color: #92400e; }
+    .particle-sentence-end { background: #ede9fe; color: #5b21b6; }
+    .particle-other-particle { background: #f3f4f6; color: #6b7280; }
+    .ending-connective     { background: #fff7ed; color: #c2410c; }
+    .ending-attributive    { background: #ecfeff; color: #0e7490; }
+    .ending-nominal        { background: #fdf4ff; color: #7e22ce; }
+    .ending-concessive     { background: #f0fdf4; color: #15803d; }
+    .ending-sentence-final { background: #fff1f2; color: #be123c; }
+    .ending-other-ending   { background: #f8fafc; color: #64748b; }
   `;
   shadow.appendChild(style);
 
@@ -166,7 +186,6 @@ function linguaRenderOverlay(payload) {
     body.appendChild(errorDiv);
   } else if (payload.result) {
     const { translation, tokens } = payload.result;
-
     const trans = document.createElement('div');
     trans.className = 'translation';
     trans.textContent = translation;
@@ -179,27 +198,30 @@ function linguaRenderOverlay(payload) {
       const card = document.createElement('div');
       card.className = 'token-card';
 
-      const word = document.createElement('div');
-      word.className = 'token-word';
-      word.textContent = token.word;
+      const mk = (tag, cls, text) => { const el = document.createElement(tag); el.className = cls; el.textContent = text; return el; };
 
-      const lemma = document.createElement('div');
-      lemma.className = 'token-lemma';
-      lemma.textContent = token.lemma;
-
-      const badge = document.createElement('span');
-      badge.className = 'pos-badge pos-' + token.pos;
-      badge.textContent = token.pos;
-
-      const meaning = document.createElement('div');
-      meaning.className = 'token-meaning';
-      meaning.textContent = token.meaning;
-
-      card.appendChild(word);
-      card.appendChild(lemma);
-      card.appendChild(badge);
-      card.appendChild(meaning);
+      card.appendChild(mk('div', 'token-word', token.word));
+      if (token.romanization) card.appendChild(mk('div', 'token-romanization', token.romanization));
+      if (token.pronunciation) card.appendChild(mk('div', 'token-pronunciation', token.pronunciation));
+      card.appendChild(mk('div', 'token-lemma', token.lemma));
+      card.appendChild(mk('span', 'pos-badge pos-' + token.pos, token.pos));
+      card.appendChild(mk('div', 'token-meaning', token.meaning));
       grid.appendChild(card);
+
+      for (const p of (token.particles ?? [])) {
+        const mc = mk('div', 'token-card morpheme-card', '');
+        mc.appendChild(mk('span', 'token-word', p.form));
+        mc.appendChild(mk('span', 'particle-badge particle-' + p.type, p.type));
+        mc.appendChild(mk('div', 'token-meaning', p.meaning));
+        grid.appendChild(mc);
+      }
+      for (const e of (token.endings ?? [])) {
+        const mc = mk('div', 'token-card morpheme-card', '');
+        mc.appendChild(mk('span', 'token-word', '-' + e.form));
+        mc.appendChild(mk('span', 'ending-badge ending-' + e.type, e.type));
+        mc.appendChild(mk('div', 'token-meaning', e.meaning));
+        grid.appendChild(mc);
+      }
     }
     body.appendChild(grid);
   }
