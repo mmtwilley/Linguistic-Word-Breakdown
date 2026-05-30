@@ -21,7 +21,7 @@
         <button id="analyze-btn" type="button" class="btn-primary">Analyze</button>
       </div>
 
-      <div id="error-banner" class="error-banner" hidden>
+      <div id="error-banner" class="error-banner" role="alert" hidden>
         <p id="error-message" class="error-message"></p>
         <div class="error-btns">
           <button id="retry-btn" type="button" class="btn-secondary" hidden>Retry</button>
@@ -29,7 +29,7 @@
         </div>
       </div>
 
-      <div id="results" hidden>
+      <div id="results" aria-live="polite" role="status" hidden>
         <p id="translation" class="translation"></p>
         <div id="tokens-grid" class="tokens-grid"></div>
       </div>

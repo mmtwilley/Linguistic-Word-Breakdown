@@ -61,54 +61,43 @@ describe('validateInput', () => {
 // ── validateResponse ─────────────────────────────────────────────────────────
 
 describe('validateResponse', () => {
-  test('returns parsed object for valid JSON', () => {
-    const result = validateResponse(JSON.stringify(VALID_RESPONSE));
+  test('returns parsed object for valid input', () => {
+    const result = validateResponse(VALID_RESPONSE);
     expect(result.translation).toBe(VALID_RESPONSE.translation);
     expect(result.tokens).toHaveLength(3);
   });
 
-  test('throws JsonError on invalid JSON', () => {
-    expect(() => validateResponse('not json')).toThrow(JsonError);
-    expect(() => validateResponse('{broken')).toThrow(JsonError);
-  });
-
   test('throws ValidationError when translation is missing', () => {
-    const err = (() => { try { validateResponse(JSON.stringify(MISSING_TRANSLATION)); } catch(e) { return e; } })();
+    const err = (() => { try { validateResponse(MISSING_TRANSLATION); } catch(e) { return e; } })();
     expect(err).toBeInstanceOf(ValidationError);
     expect(err.field).toBe('translation');
   });
 
   test('throws ValidationError when tokens is missing', () => {
-    const err = (() => { try { validateResponse(JSON.stringify(MISSING_TOKENS)); } catch(e) { return e; } })();
+    const err = (() => { try { validateResponse(MISSING_TOKENS); } catch(e) { return e; } })();
     expect(err).toBeInstanceOf(ValidationError);
     expect(err.field).toBe('tokens');
   });
 
   test('throws ValidationError when tokens array is empty', () => {
-    expect(() => validateResponse(JSON.stringify(EMPTY_TOKENS))).toThrow(ValidationError);
+    expect(() => validateResponse(EMPTY_TOKENS)).toThrow(ValidationError);
   });
 
   test('throws ValidationError when token is missing a required field', () => {
-    expect(() => validateResponse(JSON.stringify(MISSING_FIELD_TOKEN))).toThrow(ValidationError);
+    expect(() => validateResponse(MISSING_FIELD_TOKEN)).toThrow(ValidationError);
   });
 
   test('silently corrects invalid POS tag to "other"', () => {
-    const result = validateResponse(JSON.stringify(INVALID_POS_TOKEN));
+    const result = validateResponse(INVALID_POS_TOKEN);
     expect(result.tokens[0].pos).toBe('other');
   });
 
-  test('throws ValidationError when response exceeds 50 KB', () => {
-    const bigText = 'x'.repeat(51201);
-    expect(() => validateResponse(bigText)).toThrow(ValidationError);
-  });
-
   test('throws ValidationError when token count exceeds 500', () => {
-    const response = makeOversizedResponse();
-    expect(() => validateResponse(JSON.stringify(response))).toThrow(ValidationError);
+    expect(() => validateResponse(makeOversizedResponse())).toThrow(ValidationError);
   });
 
   test('returns single-token response correctly', () => {
-    const result = validateResponse(JSON.stringify(SINGLE_TOKEN_RESPONSE));
+    const result = validateResponse(SINGLE_TOKEN_RESPONSE);
     expect(result.tokens).toHaveLength(1);
     expect(result.tokens[0].word).toBe('hello');
   });
@@ -165,11 +154,21 @@ describe('analyzeText', () => {
     expect(err).toBeInstanceOf(TimeoutError);
   });
 
-  test('throws JsonError on malformed JSON in response content', async () => {
+  test('throws JsonError on malformed response body', async () => {
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ content: [{ text: 'not valid json {{' }] }),
+      text: async () => 'not valid json {{',
+    });
+    const err = await analyzeText('hello', 'sk-ant-test-key-1234567890').catch(e => e);
+    expect(err).toBeInstanceOf(JsonError);
+  });
+
+  test('throws JsonError when response is not a tool_use block', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ content: [{ type: 'text', text: 'oops' }] }),
     });
     const err = await analyzeText('hello', 'sk-ant-test-key-1234567890').catch(e => e);
     expect(err).toBeInstanceOf(JsonError);
@@ -179,7 +178,7 @@ describe('analyzeText', () => {
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ content: [{ text: JSON.stringify(MISSING_FIELD_TOKEN) }] }),
+      text: async () => JSON.stringify(makeClaudeResponse(MISSING_FIELD_TOKEN)),
     });
     const err = await analyzeText('hello', 'sk-ant-test-key-1234567890').catch(e => e);
     expect(err).toBeInstanceOf(ValidationError);
@@ -190,11 +189,18 @@ describe('analyzeText', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  test('throws ValidationError when response body exceeds 50 KB', async () => {
+    const bigText = 'x'.repeat(51201);
+    global.fetch.mockResolvedValue({ ok: true, status: 200, text: async () => bigText });
+    const err = await analyzeText('hello', 'sk-ant-test-key-1234567890').catch(e => e);
+    expect(err).toBeInstanceOf(ValidationError);
+  });
+
   test('throws ValidationError when response has >500 tokens', async () => {
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ content: [{ text: JSON.stringify(makeOversizedResponse()) }] }),
+      text: async () => JSON.stringify(makeClaudeResponse(makeOversizedResponse())),
     });
     const err = await analyzeText('hello', 'sk-ant-test-key-1234567890').catch(e => e);
     expect(err).toBeInstanceOf(ValidationError);
@@ -204,7 +210,6 @@ describe('analyzeText', () => {
     jest.useFakeTimers();
     global.fetch.mockImplementation(() => {
       return new Promise((_, reject) => {
-        // Simulate abort after timer fires
         setTimeout(() => {
           const err = new Error('Aborted');
           err.name = 'AbortError';
@@ -220,9 +225,22 @@ describe('analyzeText', () => {
     expect(err).toBeInstanceOf(TimeoutError);
     jest.useRealTimers();
   });
+
+  // T008 (US1): inject payload never contains the API key
+  test('inject payload shape: fetch args never contain apiKey string', async () => {
+    let capturedBody;
+    global.fetch.mockImplementation((url, opts) => {
+      capturedBody = JSON.parse(opts.body);
+      return Promise.resolve(makeHttpResponse(200, makeClaudeResponse(VALID_RESPONSE)));
+    });
+    await analyzeText('hello', 'sk-ant-super-secret-key');
+    // The API key appears in the x-api-key header (correct) but must not be in the body
+    const bodyStr = JSON.stringify(capturedBody);
+    expect(bodyStr).not.toContain('sk-ant-super-secret-key');
+  });
 });
 
-// ── US2: English text edge cases (T025) ─────────────────────────────────────
+// ── US2: English text edge cases ─────────────────────────────────────────────
 
 describe('English text edge cases (US2)', () => {
   beforeEach(() => { global.fetch = jest.fn(); });
@@ -237,7 +255,10 @@ describe('English text edge cases (US2)', () => {
         { word: 'languages', lemma: 'language',   pos: 'noun', meaning: 'system of communication' },
       ],
     };
-    global.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ content: [{ text: JSON.stringify(englishResponse) }] }) });
+    global.fetch.mockResolvedValue({
+      ok: true, status: 200,
+      text: async () => JSON.stringify(makeClaudeResponse(englishResponse)),
+    });
     const result = await analyzeText('I love languages', 'sk-ant-test-key-1234567890');
     expect(result.tokens).toHaveLength(3);
     expect(result.tokens[1].pos).toBe('verb');
@@ -248,12 +269,12 @@ describe('English text edge cases (US2)', () => {
       translation: 'run',
       tokens: [{ word: 'run', lemma: 'run', pos: 'GERUND', meaning: 'to move fast' }],
     };
-    const result = validateResponse(JSON.stringify(response));
+    const result = validateResponse(response);
     expect(result.tokens[0].pos).toBe('other');
   });
 });
 
-// ── US3: Single-word and short-phrase input (T027) ───────────────────────────
+// ── US3: Single-word and short-phrase input ──────────────────────────────────
 
 describe('Single-word and short-phrase input (US3)', () => {
   beforeEach(() => { global.fetch = jest.fn(); });
@@ -272,7 +293,7 @@ describe('Single-word and short-phrase input (US3)', () => {
   });
 
   test('validateResponse accepts single-token response', () => {
-    const result = validateResponse(JSON.stringify(SINGLE_TOKEN_RESPONSE));
+    const result = validateResponse(SINGLE_TOKEN_RESPONSE);
     expect(result.tokens).toHaveLength(1);
     expect(result.tokens[0].word).toBe('hello');
   });
@@ -285,7 +306,7 @@ describe('Single-word and short-phrase input (US3)', () => {
         { word: 'world', lemma: 'world', pos: 'noun', meaning: 'the earth' },
       ],
     };
-    const result = validateResponse(JSON.stringify(twoTokens));
+    const result = validateResponse(twoTokens);
     expect(result.tokens).toHaveLength(2);
   });
 });

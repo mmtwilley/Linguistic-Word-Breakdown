@@ -1,6 +1,6 @@
 # AI Prompt Contract: Linguistic Analysis
 
-**Version**: 3.0 | **Date**: 2026-05-30
+**Version**: 3.1 | **Date**: 2026-05-30
 
 This document defines the exact structure of requests sent to the Claude API and the expected
 response shape. All values here are authoritative and must stay in sync with `lib/analyzer.js`.
@@ -59,16 +59,7 @@ the tool; it never returns freeform text.
 ## System Prompt (verbatim)
 
 ```
-Analyze the input text for language learning using the linguistic_analysis tool.
-
-For each word:
-- lemma: base/dictionary form (Korean: stem without attached particles)
-- pos: noun, verb, adj, adv, pron, prep, conj, det, num, punct, or other
-- meaning: short English gloss (5 words max)
-- romanization: REQUIRED for every non-Latin-script word — Korean: Revised Romanization, Chinese: Pinyin, Japanese: Hepburn. Omit only for words already in the Latin alphabet.
-- pronunciation: REQUIRED IPA transcription for every non-Latin-script word. Omit only for Latin-script words with completely transparent pronunciation.
-- particles: REQUIRED for Korean nouns/pronouns with an attached case particle (조사). 은/는 → topic, 이/가 → subject, 을/를 → object, sentence-final copula endings → sentence-end, others → other-particle. Omit only when no particle is attached.
-- endings: REQUIRED for Korean verbs and adjectives with an attached grammatical ending (어미). -고/-아서/-어서/-면/-지만/-는데/-려고 → connective; -는/-은/-ㄴ/-을/-ㄹ/-던 modifying a noun → attributive; -기/-음/-ㅁ → nominal; -든/-든지/-거나 → concessive; -다/-요/-네/-지/-ㄹ게/-아/-어 as sentence-final → sentence-final; anything else → other-ending. Omit only for words with no attached ending.
+Analyze the input text for language learning using the linguistic_analysis tool. Produce a structured word-level breakdown. For non-Latin-script words (Korean, Chinese, Japanese), romanization and IPA pronunciation are required. For Korean, identify attached particles (조사) and verb/adjective endings (어미) as specified in the tool schema.
 ```
 
 ### Prompt Caching
@@ -274,7 +265,7 @@ const result = validateResponse(toolUse.input);
 | Error | Detection | User Message | Debug Log |
 |-------|-----------|--------------|-----------|
 | Not a tool_use block | `content.find(...)` returns undefined | "Unexpected response format. Please retry." | Log content array structure |
-| Not JSON / malformed | `response.json()` throws | "Unexpected response format. Please retry." | Log raw response (first 200 chars) |
+| Not JSON / malformed | `JSON.parse(responseText)` throws | "Unexpected response format. Please retry." | Log raw response (first 200 chars) |
 | Missing `translation` | `!data.translation` | "Incomplete response. Please retry." | Log response structure |
 | Missing `tokens` array | `!Array.isArray(data.tokens)` | "Incomplete response. Please retry." | Log response structure |
 | Empty tokens array | `data.tokens.length === 0` | "No analysis returned. Please retry." | Log response |
@@ -294,7 +285,7 @@ const result = validateResponse(toolUse.input);
 
 | Limit | Trigger | User Message |
 |-------|---------|--------------|
-| Response > 50 KB | `JSON.stringify(response).length > 51200` | "Response too large. Please try a shorter input." |
+| Response > 50 KB | `responseText.length > 51200` (raw response text, checked before JSON.parse) | "Response too large. Please try a shorter input." |
 | > 500 tokens | `data.tokens.length > 500` | "Analysis too long (>500 words). Please try a shorter input." |
 
 ### Retry Behavior

@@ -2,6 +2,17 @@ import { analyzeText } from '../lib/analyzer.js';
 
 const MENU_ID = 'lingua-analyze';
 
+const pendingTabs = new Set();
+const dismissedTabs = new Set();
+let cachedApiKey = null;
+
+async function getApiKey() {
+  if (cachedApiKey) return cachedApiKey;
+  const { apiKey } = await chrome.storage.local.get('apiKey');
+  cachedApiKey = apiKey ?? null;
+  return cachedApiKey;
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: MENU_ID,
@@ -10,27 +21,46 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'lingua-overlay-dismissed' && msg.tabId != null) {
+    dismissedTabs.add(msg.tabId);
+  }
+});
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== MENU_ID || !tab?.id) return;
+  if (pendingTabs.has(tab.id)) return;
+
   const text = info.selectionText?.trim();
   if (!text) return;
 
+  pendingTabs.add(tab.id);
+
   try {
-    await inject(tab.id, { loading: true });
+    await inject(tab.id, { tabId: tab.id, loading: true });
   } catch {
+    pendingTabs.delete(tab.id);
     return; // Tab is not injectable (e.g., chrome:// pages)
   }
 
   try {
-    const { apiKey } = await chrome.storage.local.get('apiKey');
+    const apiKey = await getApiKey();
     if (!apiKey) {
-      await inject(tab.id, { error: 'No API key set. Open the Lingua extension and add your Anthropic API key in Settings.' });
+      await inject(tab.id, { tabId: tab.id, error: 'No API key set. Open the Lingua extension and add your Anthropic API key in Settings.' });
       return;
     }
     const result = await analyzeText(text, apiKey);
-    await inject(tab.id, { result });
+    if (!dismissedTabs.has(tab.id)) {
+      await inject(tab.id, { tabId: tab.id, result });
+    }
+    dismissedTabs.delete(tab.id);
   } catch (err) {
-    await inject(tab.id, { error: err.message || 'Something went wrong. Please try again.' }).catch(() => {});
+    if (!dismissedTabs.has(tab.id)) {
+      await inject(tab.id, { tabId: tab.id, error: err.message || 'Something went wrong. Please try again.' }).catch(() => {});
+    }
+    dismissedTabs.delete(tab.id);
+  } finally {
+    pendingTabs.delete(tab.id);
   }
 });
 
@@ -42,7 +72,11 @@ async function inject(tabId, payload) {
   });
 }
 
-// Self-contained: injected into page context via chrome.scripting — no outer-scope references allowed.
+// Self-contained: injected into page context via chrome.scripting.
+// This function is serialized by Chrome — it cannot close over module-scope
+// variables (including cachedApiKey). The args array contains only the
+// payload object, which never includes the API key. Security guarantee:
+// the key is retrieved and used exclusively within this service worker context.
 function linguaRenderOverlay(payload) {
   const OVERLAY_ID = '__lingua_overlay_host__';
   const existing = document.getElementById(OVERLAY_ID);
@@ -163,7 +197,12 @@ function linguaRenderOverlay(payload) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close-btn';
   closeBtn.textContent = '✕';
-  closeBtn.addEventListener('click', () => host.remove());
+  closeBtn.addEventListener('click', () => {
+    if (payload.tabId != null) {
+      chrome.runtime.sendMessage({ type: 'lingua-overlay-dismissed', tabId: payload.tabId });
+    }
+    host.remove();
+  });
 
   header.appendChild(logo);
   header.appendChild(closeBtn);
