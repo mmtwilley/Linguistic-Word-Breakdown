@@ -3,12 +3,14 @@ import {
   validateInput,
   validateResponse,
   analyzeText,
+  buildAnalysisTool,
   TimeoutError,
   ApiError,
   NetworkError,
   JsonError,
   ValidationError,
 } from '../lib/analyzer.js';
+import { SCRIPT } from '../lib/lang-detect.js';
 import {
   VALID_RESPONSE,
   SINGLE_TOKEN_RESPONSE,
@@ -308,5 +310,148 @@ describe('Single-word and short-phrase input (US3)', () => {
     };
     const result = validateResponse(twoTokens);
     expect(result.tokens).toHaveLength(2);
+  });
+});
+
+// ── T009 (US2): buildAnalysisTool schema shapes ───────────────────────────────
+
+describe('buildAnalysisTool schema shapes', () => {
+  test('(KOR, null): translation required, no romanization, particles+endings in properties', () => {
+    const schema = buildAnalysisTool(SCRIPT.KOR, null).input_schema;
+    expect(schema.required).toContain('translation');
+    expect(schema.properties.tokens.items.properties).not.toHaveProperty('romanization');
+    expect(schema.properties.tokens.items.properties).toHaveProperty('particles');
+    expect(schema.properties.tokens.items.properties).toHaveProperty('endings');
+  });
+
+  test('(KOR, "text"): translation absent from schema', () => {
+    const schema = buildAnalysisTool(SCRIPT.KOR, 'Hello').input_schema;
+    expect(schema.required).not.toContain('translation');
+    expect(schema.properties).not.toHaveProperty('translation');
+  });
+
+  test('(JPN, null): translation required, romanization required in token schema', () => {
+    const schema = buildAnalysisTool(SCRIPT.JPN, null).input_schema;
+    expect(schema.required).toContain('translation');
+    expect(schema.properties.tokens.items.required).toContain('romanization');
+  });
+
+  test('(JPN, "text"): translation absent, romanization still required', () => {
+    const schema = buildAnalysisTool(SCRIPT.JPN, 'Hello').input_schema;
+    expect(schema.required).not.toContain('translation');
+    expect(schema.properties.tokens.items.required).toContain('romanization');
+  });
+
+  test('(CMN, null): translation required, romanization required', () => {
+    const schema = buildAnalysisTool(SCRIPT.CMN, null).input_schema;
+    expect(schema.required).toContain('translation');
+    expect(schema.properties.tokens.items.required).toContain('romanization');
+  });
+
+  test('(CMN, "text"): translation absent, romanization present', () => {
+    const schema = buildAnalysisTool(SCRIPT.CMN, 'Hello').input_schema;
+    expect(schema.required).not.toContain('translation');
+    expect(schema.properties.tokens.items.required).toContain('romanization');
+  });
+
+  test('(LAT, null): translation required, no romanization, no particles, no endings', () => {
+    const schema = buildAnalysisTool(SCRIPT.LAT, null).input_schema;
+    expect(schema.required).toContain('translation');
+    const tokenProps = schema.properties.tokens.items.properties;
+    expect(tokenProps).not.toHaveProperty('romanization');
+    expect(tokenProps).not.toHaveProperty('particles');
+    expect(tokenProps).not.toHaveProperty('endings');
+  });
+});
+
+// ── T010 (US2): analyzeText DeepL success path ───────────────────────────────
+
+describe('analyzeText DeepL success path', () => {
+  beforeEach(() => { global.fetch = jest.fn(); });
+  afterEach(() => { jest.restoreAllMocks(); });
+
+  test('DeepL provides translation; Claude schema omits translation; result merges both', async () => {
+    const korTokensNoTranslation = {
+      tokens: [
+        { word: '안녕하세요', lemma: '안녕하다', pos: 'verb', meaning: 'hello/greetings' },
+      ],
+    };
+
+    let capturedClaudeBody;
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ translations: [{ text: 'Hello', detected_source_language: 'KO' }] }),
+      })
+      .mockImplementationOnce((url, opts) => {
+        capturedClaudeBody = JSON.parse(opts.body);
+        return Promise.resolve(makeHttpResponse(200, makeClaudeResponse(korTokensNoTranslation)));
+      });
+
+    const result = await analyzeText('안녕하세요', 'sk-ant-test-key-1234567890', 'test-deepl-key:fx');
+
+    // (a) Claude request schema must NOT require translation
+    expect(capturedClaudeBody.tools[0].input_schema.required).not.toContain('translation');
+
+    // (b) result.translation comes from DeepL pre-translation
+    expect(result.translation).toBe('Hello');
+
+    // (c) Korean tokens get romanization from local romanizer
+    expect(result.tokens[0].romanization).toBeTruthy();
+  });
+});
+
+// ── T012 (US3): analyzeText DeepL fallback path ───────────────────────────────
+
+describe('analyzeText DeepL fallback path', () => {
+  beforeEach(() => { global.fetch = jest.fn(); });
+  afterEach(() => { jest.restoreAllMocks(); });
+
+  test('DeepL error: console.warn fires, result comes from Claude, no exception thrown', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: false, status: 403 })
+      .mockResolvedValueOnce(makeHttpResponse(200, makeClaudeResponse(VALID_RESPONSE)));
+
+    const result = await analyzeText('안녕하세요', 'sk-ant-test-key-1234567890', 'invalid-key:fx');
+
+    // (a) console.warn was called with a string containing '[Lingua]'
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[Lingua]'),
+      expect.any(String),
+    );
+
+    // (b) result.translation comes from Claude
+    expect(result.translation).toBe(VALID_RESPONSE.translation);
+
+    // (c) no error thrown — result is a valid analysis
+    expect(result.tokens).toHaveLength(3);
+
+    warnSpy.mockRestore();
+  });
+});
+
+// ── T014 (US4): Latin text bypasses DeepL entirely ───────────────────────────
+
+describe('analyzeText Latin text bypass', () => {
+  beforeEach(() => { global.fetch = jest.fn(); });
+  afterEach(() => { jest.restoreAllMocks(); });
+
+  test('English text: DeepL not called, Claude schema includes translation', async () => {
+    let capturedBody;
+    global.fetch.mockImplementation((url, opts) => {
+      capturedBody = JSON.parse(opts.body);
+      return Promise.resolve(makeHttpResponse(200, makeClaudeResponse(VALID_RESPONSE)));
+    });
+
+    await analyzeText('I love languages', 'sk-ant-test-key-1234567890', 'some-deepl-key:fx');
+
+    // fetch should be called exactly once (Claude only — no DeepL call)
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    // The Claude request tool schema includes translation in required
+    expect(capturedBody.tools[0].input_schema.required).toContain('translation');
   });
 });

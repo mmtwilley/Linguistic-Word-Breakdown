@@ -97,10 +97,10 @@ A user opens the Settings panel, starts typing an API key, then changes their mi
 - **FR-002**: When the user dismisses the page overlay while a right-click analysis is loading, the overlay MUST remain dismissed when the response arrives — no result panel may appear afterward.
 - **FR-003**: When a right-click analysis is already in progress for a tab, any additional analysis trigger on that same tab MUST be ignored until the current one completes.
 - **FR-004**: Input text validation MUST occur exactly once per analysis submission.
-- **FR-005**: Token card rendering logic MUST be defined canonically in `lib/renderer.js` and used by the popup view; due to the MV3 injection constraint (injected functions cannot import ES modules), the page overlay MUST maintain a synchronized copy of the same logic in `service-worker.js`.
+- **FR-005**: Token card rendering logic MUST be defined canonically in `lib/renderer.js` and used by the popup view; due to the MV3 injection constraint (injected functions cannot import ES modules), the page overlay MUST maintain a manually maintained copy of the same logic in `service-worker.js`, kept in sync by convention.
 - **FR-006**: The popup's results container MUST be cleared using an explicit, unambiguous DOM method.
 - **FR-007**: The rate-limit cooldown MUST begin counting from the moment the user submits an analysis request, not from when a response is received.
-- **FR-008**: Response size validation MUST NOT re-serialize the full API response object on each check; it MUST use a more efficient approach.
+- **FR-008**: Response size validation MUST NOT re-serialize the full API response object on each check; it MUST check the raw response body length before parsing (e.g., via `response.text()`) rather than re-serializing a parsed object.
 - **FR-009**: Analysis prompt instructions and tool schema field descriptions MUST NOT duplicate the same rules; each rule MUST have a single authoritative location.
 - **FR-010**: The user's API key MUST be cached in memory after the first successful read from browser storage; subsequent analysis requests within the same session MUST use the cached value unless the user saves a new key.
 - **FR-011**: When analysis results appear in the popup, the results region MUST be marked so that assistive technologies announce new content automatically.

@@ -53,6 +53,14 @@
         </div>
         <input type="password" id="api-key-input" class="api-key-input" placeholder="sk-ant-&#8230;" autocomplete="off" spellcheck="false">
         <p class="hint">Stored locally in your browser. Never shared with anyone except Anthropic.</p>
+      </div>
+      <div class="settings-section settings-section-divided">
+        <div class="settings-label-row">
+          <label for="deepl-key-input" class="settings-label">DeepL API Key <span class="settings-optional">(optional)</span></label>
+          <a href="https://www.deepl.com/pro-api" target="_blank" rel="noopener" class="get-key-link">Get free key ↗</a>
+        </div>
+        <input type="password" id="deepl-key-input" class="api-key-input" placeholder="&#8230;:fx" autocomplete="off" spellcheck="false">
+        <p class="hint">Offloads translation to DeepL — faster and ~30% cheaper per request. 500k characters/month free. Leave blank to remove.</p>
         <div id="settings-error" class="settings-error" hidden></div>
         <button id="save-btn" type="button" class="btn-primary">Save</button>
       </div>

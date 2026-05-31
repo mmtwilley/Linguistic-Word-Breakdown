@@ -33,6 +33,7 @@
 - [ ] T002 [P] Create `lib/renderer.js`: export `buildTokenCard(token)` and `buildMorphemeCard(form, badgeClass, typeLabel, meaning)` as ES module named exports; use `textContent`-only DOM construction matching the current card structure in `popup/popup.js`
 - [ ] T003 Update `popup/popup.js`: import `buildTokenCard` and `buildMorphemeCard` from `../lib/renderer.js`; refactor `renderResults()` to call them instead of inline card construction; replace `tokensGrid.textContent = ''` with `tokensGrid.replaceChildren()`; remove the explicit `validateInput(inputText.value)` call from `runAnalysis()` (FR-004, FR-005, FR-006)
 - [ ] T004 [P] Fix `lib/analyzer.js` response size check: replace `JSON.stringify(data).length > MAX_RESPONSE_BYTES` check in `validateResponse` with a pre-parse check in `analyzeText` — `const text = await response.text(); if (text.length > MAX_RESPONSE_BYTES) throw new ValidationError(...); const data = JSON.parse(text);` (FR-008)
+- [ ] T004b Add unit tests in `tests/analyzer.test.js` for the FR-008 response size check: (a) mock a fetch response whose body length exceeds `MAX_RESPONSE_BYTES` and assert `analyzeText` throws `ValidationError`; (b) mock a response within the limit and assert it resolves to a valid parsed result; run `npm test` to confirm green (FR-008, constitution Dev Workflow MUST)
 - [ ] T005 Update `lib/analyzer.js` `SYSTEM_PROMPT` to v3.1: replace per-field rule list with framing-only text as specified in `specs/002-fix-review-issues/contracts/ai-prompt-contract.md`; preserve `cache_control: { type: 'ephemeral' }` on the system message object (FR-009)
 - [ ] T006 Add API key in-memory cache to `popup/popup.js`: add `let cachedApiKey = null` at module scope; add `async function getApiKey()` that returns cache or reads from `chrome.storage.local`; replace direct `chrome.storage.local.get('apiKey')` call in `runAnalysis` with `await getApiKey()`; update `saveBtn` click handler to set `cachedApiKey = key` after saving (FR-010)
 - [ ] T007 [P] Add API key in-memory cache to `background/service-worker.js`: add `let cachedApiKey = null` at module scope; add `async function getApiKey()` that returns cache or reads from storage; replace the `chrome.storage.local.get('apiKey')` call in `onClicked` handler with `await getApiKey()`; add code comment on `linguaRenderOverlay` confirming function is module-scope and cannot capture `apiKey` (FR-001, FR-010)
@@ -80,7 +81,7 @@
 
 ---
 
-## Phase 6: User Story 4 — Screen Readers Announce Results (Priority: P2)
+## Phase 6: User Story 4 — Screen Readers Announce Results (Priority: P2) ⚡ Can start after Phase 1
 
 **Goal**: ARIA live region causes screen reader to announce results automatically.
 
@@ -130,8 +131,8 @@
 **Phase 2:**
 - T002 → T003 (renderer.js must exist before popup.js imports it)
 - T003 → T006 (popup.js: renderer changes must land before adding cache function)
-- T004 → T005 (both modify `lib/analyzer.js`; T004 must land first to avoid merge conflicts)
-- T007 is independent of T002/T003/T004/T005
+- T004 → T004b → T005 (T004b tests the T004 change in analyzer.test.js; T005 then modifies the same lib/analyzer.js and must land after tests are green)
+- T007 is independent of T002/T003/T004/T004b/T005
 
 **Phase 4 (US2):**
 - T010 → T011 → T012 (all modify service-worker.js; each builds on previous)
@@ -144,11 +145,11 @@
 
 ### Parallel Opportunities
 
-Within Phase 2 (after T002 completes, T003 can start; T004→T005 and T007 can run in parallel with T003):
+Within Phase 2 (after T002 completes, T003 can start; T004→T004b→T005 and T007 can run in parallel with T003):
 ```
 T001 → T002 → T003 → T006
               ↕
-         T004 [P] → T005
+         T004 [P] → T004b → T005
          T007 [P]
 ```
 
@@ -164,10 +165,13 @@ T008 [US1] [P]    T010 → T011 → T012 [US2]    T013 [US3]    T014 [US4] [P]
 ```text
 Start in parallel after T001:
   T002: Create lib/renderer.js
-  T004 [P]: Fix analyzer.js size check  ← then T005 (same file, sequential)
+  T004 [P]: Fix analyzer.js size check  ← then T004b (write tests), then T005 (same file, sequential)
   T007 [P]: service-worker.js cache + comment
 
 After T004 completes:
+  T004b: Write analyzer.test.js size check tests (sequential — tests the T004 change)
+
+After T004b completes:
   T005: Update analyzer.js system prompt (sequential — same file as T004)
 
 After T002 completes:

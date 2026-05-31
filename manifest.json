@@ -10,7 +10,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://api-free.deepl.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -21,7 +22,7 @@
     "type": "module"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; connect-src https://api.anthropic.com; default-src 'self'; img-src 'self' data:;"
+    "extension_pages": "script-src 'self'; connect-src https://api.anthropic.com https://api-free.deepl.com; default-src 'self'; img-src 'self' data:;"
   },
   "icons": {
     "16": "icons/icon16.png",

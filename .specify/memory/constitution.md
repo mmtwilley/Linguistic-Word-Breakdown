@@ -95,6 +95,10 @@ The extension MUST request only the Chrome permissions required for declared fun
 `https://api.anthropic.com/*`. Adding permissions beyond this set requires a constitution
 amendment with explicit justification.
 
+For users who configure the optional DeepL integration, `https://api-free.deepl.com/*` in
+`host_permissions` and `connect-src` is also required. The DeepL API key is transmitted only
+as an Authorization header to this endpoint and is never forwarded elsewhere.
+
 ## Development Workflow
 
 - All features MUST begin with a specification (`/speckit-specify`) before implementation.
@@ -137,4 +141,49 @@ conflicts with a constitution principle, the principle wins.
 or `manifest.json` MUST verify compliance with Principles I, III, and V respectively before
 the task is marked complete.
 
-**Version**: 1.0.0 | **Ratified**: 2026-05-03 | **Last Amended**: 2026-05-29
+**Version**: 1.0.1 | **Ratified**: 2026-05-03 | **Last Amended**: 2026-05-30
+
+## Pending Amendments
+
+The following PATCH-level changes are deferred until feature `002-fix-review-issues` ships.
+Apply by running `/speckit-constitution` with the corrected text.
+
+### PA-001 — Remove stale SC-005 cross-reference from Principle IV
+
+**Target**: `## Core Principles > IV. Typed Error Handling`, last sentence of paragraph 1.
+
+**Current text**:
+> Every user-facing error MUST surface a human-readable message within 1 second of detection
+> (per SC-005).
+
+**Replacement**:
+> Every user-facing error MUST surface a human-readable message within 1 second of detection.
+
+**Why**: `SC-005` was a cross-reference to a success criterion in spec 001. In spec 002 `SC-005`
+refers to screen-reader announcement timing — an unrelated requirement. The 1-second rule for
+error surfacing is self-contained and needs no external SC reference; removing it eliminates
+the stale pointer without weakening the principle.
+
+**Bump**: PATCH (wording clarification — no change to the normative rule itself).
+
+---
+
+### PA-002 — Scope Quality Gate 4 timeout check to spec 001 FR-013
+
+**Target**: `## Quality Gates`, item 4.
+
+**Current text**:
+> **Timeout consistency**: `TIMEOUT_MS` value in `lib/analyzer.js`, FR-013 in `spec.md`, and
+> any task checklist items referencing the timeout all agree on the same value.
+
+**Replacement**:
+> **Timeout consistency**: `TIMEOUT_MS` value in `lib/analyzer.js` and
+> `specs/001-lingua-word-breakdown/spec.md FR-013` agree on the same value. Features that do
+> not modify timeout behavior may treat this gate as not applicable.
+
+**Why**: Quality Gate 4 hardcodes `FR-013 in spec.md` without qualifying which spec. Feature
+002 has no FR-013 (its FRs end at FR-012), making the gate un-verifiable for any feature that
+doesn't touch timeout behavior. The replacement anchors the gate to the project-level timeout
+spec and adds an explicit N/A escape for unrelated features.
+
+**Bump**: PATCH (clarification — normative intent unchanged).

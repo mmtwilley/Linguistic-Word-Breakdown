@@ -1,3 +1,5 @@
+> **Superseded**: See [v3.2](../../003-tiered-api-pipeline/contracts/ai-prompt-contract.md) for the current conditional schema.
+
 # AI Prompt Contract Amendment: System Prompt v3.1
 
 **Version**: 3.1 (amendment to v3.0)

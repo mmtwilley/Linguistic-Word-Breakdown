@@ -4,13 +4,15 @@ const MENU_ID = 'lingua-analyze';
 
 const pendingTabs = new Set();
 const dismissedTabs = new Set();
-let cachedApiKey = null;
+let cachedApiKey   = null;
+let cachedDeeplKey = null;
 
-async function getApiKey() {
-  if (cachedApiKey) return cachedApiKey;
-  const { apiKey } = await chrome.storage.local.get('apiKey');
-  cachedApiKey = apiKey ?? null;
-  return cachedApiKey;
+async function getKeys() {
+  if (cachedApiKey) return { apiKey: cachedApiKey, deeplKey: cachedDeeplKey };
+  const { apiKey, deeplKey } = await chrome.storage.local.get(['apiKey', 'deeplKey']);
+  cachedApiKey   = apiKey   ?? null;
+  cachedDeeplKey = deeplKey ?? null;
+  return { apiKey: cachedApiKey, deeplKey: cachedDeeplKey };
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -44,12 +46,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   try {
-    const apiKey = await getApiKey();
+    const { apiKey, deeplKey } = await getKeys();
     if (!apiKey) {
       await inject(tab.id, { tabId: tab.id, error: 'No API key set. Open the Lingua extension and add your Anthropic API key in Settings.' });
       return;
     }
-    const result = await analyzeText(text, apiKey);
+    const result = await analyzeText(text, apiKey, deeplKey);
     if (!dismissedTabs.has(tab.id)) {
       await inject(tab.id, { tabId: tab.id, result });
     }

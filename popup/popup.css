@@ -371,3 +371,13 @@ textarea:focus {
   color: var(--error-text);
   padding: 4px 0;
 }
+
+.settings-section-divided {
+  border-top: 1px solid var(--border);
+}
+
+.settings-optional {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}

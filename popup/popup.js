@@ -4,7 +4,8 @@ import { buildTokenCard, buildMorphemeCard } from '../lib/renderer.js';
 
 const RATE_LIMIT_MS = 1000;
 let lastSubmitTime = 0;
-let cachedApiKey = null;
+let cachedApiKey   = null;
+let cachedDeeplKey = null;
 
 const $ = id => document.getElementById(id);
 
@@ -23,15 +24,17 @@ const translationEl   = $('translation');
 const tokensGrid      = $('tokens-grid');
 const settingsBtn     = $('settings-btn');
 const apiKeyInput     = $('api-key-input');
+const deeplKeyInput   = $('deepl-key-input');
 const saveBtn         = $('save-btn');
 const cancelBtn       = $('cancel-btn');
 const settingsError   = $('settings-error');
 
-async function getApiKey() {
-  if (cachedApiKey) return cachedApiKey;
-  const { apiKey } = await chrome.storage.local.get('apiKey');
-  cachedApiKey = apiKey ?? null;
-  return cachedApiKey;
+async function getKeys() {
+  if (cachedApiKey) return { apiKey: cachedApiKey, deeplKey: cachedDeeplKey };
+  const { apiKey, deeplKey } = await chrome.storage.local.get(['apiKey', 'deeplKey']);
+  cachedApiKey   = apiKey   ?? null;
+  cachedDeeplKey = deeplKey ?? null;
+  return { apiKey: cachedApiKey, deeplKey: cachedDeeplKey };
 }
 
 function showMain() {
@@ -121,10 +124,10 @@ async function runAnalysis() {
   resultsEl.hidden = true;
   showLoading();
 
-  const apiKey = await getApiKey();
+  const { apiKey, deeplKey } = await getKeys();
 
   try {
-    const data = await analyzeText(inputText.value, apiKey);
+    const data = await analyzeText(inputText.value, apiKey, deeplKey);
     renderResults(data);
   } catch (err) {
     handleError(err);
@@ -153,26 +156,40 @@ retryBtn.addEventListener('click', runAnalysis);
 settingsLinkBtn.addEventListener('click', showSettings);
 settingsBtn.addEventListener('click', showSettings);
 cancelBtn.addEventListener('click', () => {
-  apiKeyInput.value = '';
+  apiKeyInput.value   = '';
+  deeplKeyInput.value = '';
   showMain();
 });
 
 saveBtn.addEventListener('click', async () => {
-  const key = apiKeyInput.value.trim();
-  if (key.length < 20) {
-    settingsError.textContent = 'Please enter a valid API key (at least 20 characters).';
+  const anthropicKey = apiKeyInput.value.trim();
+  const deeplKey     = deeplKeyInput.value.trim();
+
+  if (anthropicKey.length < 20) {
+    settingsError.textContent = 'Please enter a valid Anthropic API key (at least 20 characters).';
     settingsError.hidden = false;
     return;
   }
-  await chrome.storage.local.set({ apiKey: key });
-  cachedApiKey = key;
-  apiKeyInput.value = '';
+
+  const updates = { apiKey: anthropicKey };
+  if (deeplKey) {
+    updates.deeplKey = deeplKey;
+  } else {
+    await chrome.storage.local.remove('deeplKey');
+  }
+  await chrome.storage.local.set(updates);
+
+  cachedApiKey   = anthropicKey;
+  cachedDeeplKey = deeplKey || null;
+
+  apiKeyInput.value   = '';
+  deeplKeyInput.value = '';
   settingsError.hidden = true;
   showMain();
 });
 
 async function init() {
-  const apiKey = await getApiKey();
+  const { apiKey } = await getKeys();
   if (!apiKey) showSettings();
 }
 
