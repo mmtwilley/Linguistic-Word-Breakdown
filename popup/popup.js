@@ -162,15 +162,23 @@ cancelBtn.addEventListener('click', () => {
 });
 
 saveBtn.addEventListener('click', async () => {
-  const anthropicKey = apiKeyInput.value.trim();
+  const enteredKey   = apiKeyInput.value.trim();
   const deeplKey     = deeplKeyInput.value.trim();
 
-  if (anthropicKey.length < 20) {
+  // Allow saving without re-entering the Anthropic key when one is already cached.
+  // Only require a key entry when none is saved yet.
+  if (enteredKey.length > 0 && enteredKey.length < 20) {
     settingsError.textContent = 'Please enter a valid Anthropic API key (at least 20 characters).';
     settingsError.hidden = false;
     return;
   }
+  if (enteredKey.length === 0 && !cachedApiKey) {
+    settingsError.textContent = 'Please enter your Anthropic API key.';
+    settingsError.hidden = false;
+    return;
+  }
 
+  const anthropicKey = enteredKey || cachedApiKey;
   const updates = { apiKey: anthropicKey };
   if (deeplKey) {
     updates.deeplKey = deeplKey;
@@ -181,6 +189,8 @@ saveBtn.addEventListener('click', async () => {
 
   cachedApiKey   = anthropicKey;
   cachedDeeplKey = deeplKey || null;
+
+  chrome.runtime.sendMessage({ type: 'lingua-keys-updated' }).catch(() => {});
 
   apiKeyInput.value   = '';
   deeplKeyInput.value = '';

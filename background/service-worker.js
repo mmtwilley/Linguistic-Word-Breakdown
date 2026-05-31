@@ -27,6 +27,10 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'lingua-overlay-dismissed' && msg.tabId != null) {
     dismissedTabs.add(msg.tabId);
   }
+  if (msg.type === 'lingua-keys-updated') {
+    cachedApiKey   = null;
+    cachedDeeplKey = null;
+  }
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {

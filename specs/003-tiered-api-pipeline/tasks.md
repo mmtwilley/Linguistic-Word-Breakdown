@@ -47,7 +47,7 @@
 **Independent Test**: Open Settings, enter a DeepL key, save, reopen Settings, confirm key is registered; clear, reopen, confirm empty; type partial key, click Cancel, reopen, confirm field is empty.
 
 - [x] T007 [US1] Update `popup/popup.js` `cancelBtn` click handler: add `deeplKeyInput.value = '';` alongside the existing `apiKeyInput.value = '';` before `showMain()` (FR-001, Design Decision 7 fix)
-- [ ] T008 [US1] Manual verification — follow "Testing Settings Cancel" section in `specs/003-tiered-api-pipeline/quickstart.md`: (a) enter DeepL key → save → reopen Settings → confirm key is on file; (b) leave DeepL field blank → save → confirm key removed; (c) type partial DeepL key → Cancel → reopen Settings → confirm field is empty (FR-001, SC-004)
+- [x] T008 [US1] Manual verification — follow "Testing Settings Cancel" section in `specs/003-tiered-api-pipeline/quickstart.md`: (a) enter DeepL key → save → reopen Settings → confirm key is on file; (b) leave DeepL field blank → save → confirm key removed; (c) type partial DeepL key → Cancel → reopen Settings → confirm field is empty (FR-001, SC-004)
 
 **Checkpoint**: Settings DeepL field saves, clears via blank save, and cancel leaves field empty.
 
@@ -61,7 +61,7 @@
 
 - [x] T009 [US2] Add unit tests to `tests/analyzer.test.js` for `buildAnalysisTool()`: assert schema shape for each combination — `(KOR, null)`: translation required, no romanization, particles/endings present; `(KOR, 'text')`: translation absent; `(JPN, null)`: translation required, romanization required; `(JPN, 'text')`: translation absent, romanization present; `(CMN, null/set)`: same as JPN pattern; `(LAT, null)`: translation required, no romanization, no particles (FR-005)
 - [x] T010 [US2] Add unit tests to `tests/analyzer.test.js` for `analyzeText()` DeepL success path: mock `translateWithDeepL` to return `'mocked translation'`; mock `fetch` returning a valid Claude response with no `translation` field in `toolUse.input`; assert (a) the Claude request JSON body's `tools[0].input_schema` does not include `translation` in `required`, (b) `result.translation` equals `'mocked translation'` (pre-translation merge), (c) Korean tokens have `romanization` field populated by `romanizeKorean` (FR-004, FR-005)
-- [ ] T011 [US2] Manual verification — follow "Testing with DeepL Key" section in `specs/003-tiered-api-pipeline/quickstart.md`: valid DeepL key + Korean text → DevTools Network confirms `api-free.deepl.com` request before Anthropic; result shows translation + word breakdown + romanization (SC-001, SC-002)
+- [x] T011 [US2] Manual verification — follow "Testing with DeepL Key" section in `specs/003-tiered-api-pipeline/quickstart.md`: valid DeepL key + Korean text → DevTools Network confirms `api-free.deepl.com` request before Anthropic; result shows translation + word breakdown + romanization (SC-001, SC-002)
 
 **Checkpoint**: DeepL success path confirmed via unit tests and DevTools network inspection.
 
@@ -74,7 +74,7 @@
 **Independent Test**: Configure an invalid DeepL key, analyze Korean text, confirm full result appears; open DevTools Console and confirm `[Lingua] DeepL translation failed` warning (no user-visible error).
 
 - [x] T012 [US3] Add unit tests to `tests/analyzer.test.js` for `analyzeText()` fallback path: mock `translateWithDeepL` to throw a `new Error('DeepL error 403')`; mock `fetch` returning a full Claude response with `translation` field present; assert (a) `console.warn` was called with a string containing `'[Lingua]'`, (b) `result.translation` comes from Claude (not DeepL), (c) no error is thrown from `analyzeText` (FR-006, SC-003)
-- [ ] T013 [US3] Manual verification — follow "Testing Fallback Behavior" section in `specs/003-tiered-api-pipeline/quickstart.md`: configure invalid DeepL key → submit Korean text → confirm full result appears with no DeepL error message; confirm DevTools Console shows `[Lingua] DeepL translation failed` warning (SC-003)
+- [x] T013 [US3] Manual verification — follow "Testing Fallback Behavior" section in `specs/003-tiered-api-pipeline/quickstart.md`: configure invalid DeepL key → submit Korean text → confirm full result appears with no DeepL error message; confirm DevTools Console shows `[Lingua] DeepL translation failed` warning (SC-003)
 
 **Checkpoint**: Fallback path confirmed — silent to user, logged to console.
 
@@ -87,7 +87,7 @@
 **Independent Test**: Configure a valid DeepL key, analyze English text, confirm DevTools Network shows no request to `api-free.deepl.com`.
 
 - [x] T014 [US4] Add unit tests to `tests/analyzer.test.js` for Latin bypass: spy on `translateWithDeepL`; call `analyzeText` with English text and a non-null `deeplKey`; assert `translateWithDeepL` was NOT called; assert the Claude request body's tool schema includes `translation` in `required` (FR-007, SC-005)
-- [ ] T015 [US4] Manual verification — follow "Testing Latin Text Bypass" section in `specs/003-tiered-api-pipeline/quickstart.md`: valid DeepL key configured → submit English text → confirm DevTools Network shows no `api-free.deepl.com` request; result identical to Claude-only behavior (SC-005)
+- [x] T015 [US4] Manual verification — follow "Testing Latin Text Bypass" section in `specs/003-tiered-api-pipeline/quickstart.md`: valid DeepL key configured → submit English text → confirm DevTools Network shows no `api-free.deepl.com` request; result identical to Claude-only behavior (SC-005)
 
 **Checkpoint**: Latin text bypasses DeepL entirely — confirmed by unit test and DevTools.
 
@@ -96,7 +96,7 @@
 ## Phase 7: Polish & Cross-Cutting Concerns
 
 - [x] T016 [P] Run `npm test` from `extension/` and confirm all tests pass, including the new T004–T006 lib tests and T009, T010, T012, T014 analyzer tests
-- [ ] T017 [P] Run all manual verification scenarios from `specs/003-tiered-api-pipeline/quickstart.md`: DeepL valid key path, fallback path, Latin bypass, settings cancel; verify each against the FR verification table; also right-click-select Korean text on a page with a valid DeepL key configured and confirm the context menu analysis produces the same tiered result as the popup flow (spec Assumption 5)
+- [x] T017 [P] Run all manual verification scenarios from `specs/003-tiered-api-pipeline/quickstart.md`: DeepL valid key path, fallback path, Latin bypass, settings cancel; verify each against the FR verification table; also right-click-select Korean text on a page with a valid DeepL key configured and confirm the context menu analysis produces the same tiered result as the popup flow (spec Assumption 5)
 - [x] T018 [P] Add a superseded-by note to `specs/002-fix-review-issues/contracts/ai-prompt-contract.md` (v3.1): prepend `> **Superseded**: See [v3.2](../../003-tiered-api-pipeline/contracts/ai-prompt-contract.md) for the current conditional schema.` at the top of the document
 
 ---
