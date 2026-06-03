@@ -12,26 +12,57 @@
     <div id="main-view">
       <header class="header">
         <h1 class="logo">Lingua</h1>
+        <nav class="tab-bar" role="tablist" aria-label="Main navigation">
+          <button id="tab-analysis" class="tab-btn tab-active" role="tab" aria-selected="true" data-tab="analysis">Analysis</button>
+          <button id="tab-history" class="tab-btn" role="tab" aria-selected="false" data-tab="history">History</button>
+          <button id="tab-translate" class="tab-btn" role="tab" aria-selected="false" data-tab="translate">Translate</button>
+        </nav>
         <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Open settings">&#9881;</button>
       </header>
 
-      <div class="input-section">
-        <textarea id="input-text" placeholder="Paste or type text in any language&#8230;" rows="4"></textarea>
-        <div id="char-count" class="char-count">0 / 2000</div>
-        <button id="analyze-btn" type="button" class="btn-primary">Analyze</button>
-      </div>
+      <!-- Analysis panel -->
+      <div id="analysis-panel">
+        <div class="input-section">
+          <textarea id="input-text" placeholder="Paste or type text in any language&#8230;" rows="4"></textarea>
+          <div id="char-count" class="char-count">0 / 2000</div>
+          <button id="analyze-btn" type="button" class="btn-primary">Analyze</button>
+        </div>
 
-      <div id="error-banner" class="error-banner" role="alert" hidden>
-        <p id="error-message" class="error-message"></p>
-        <div class="error-btns">
-          <button id="retry-btn" type="button" class="btn-secondary" hidden>Retry</button>
-          <button id="settings-link-btn" type="button" class="btn-secondary" hidden>Open Settings</button>
+        <div id="error-banner" class="error-banner" role="alert" hidden>
+          <p id="error-message" class="error-message"></p>
+          <div class="error-btns">
+            <button id="retry-btn" type="button" class="btn-secondary" hidden>Retry</button>
+            <button id="settings-link-btn" type="button" class="btn-secondary" hidden>Open Settings</button>
+          </div>
+        </div>
+
+        <div id="results" aria-live="polite" role="status" hidden>
+          <p id="translation" class="translation"></p>
+          <div id="tokens-grid" class="tokens-grid"></div>
         </div>
       </div>
 
-      <div id="results" aria-live="polite" role="status" hidden>
-        <p id="translation" class="translation"></p>
-        <div id="tokens-grid" class="tokens-grid"></div>
+      <!-- Bulk translation panel -->
+      <section id="bulk-section" hidden>
+        <div class="bulk-input-row">
+          <textarea id="bulk-input" placeholder="Paste forum post here…"></textarea>
+          <div class="bulk-actions">
+            <button id="bulk-submit" type="button" class="btn-primary">Translate</button>
+            <button id="bulk-cancel" type="button" class="btn-secondary" hidden>Cancel</button>
+          </div>
+          <div class="bulk-meta-row">
+            <span id="bulk-progress"></span>
+            <span id="bulk-cache-stats"></span>
+          </div>
+          <span id="bulk-status"></span>
+        </div>
+        <div id="bulk-results"></div>
+      </section>
+
+      <!-- History panel -->
+      <div id="history-panel" hidden>
+        <ul id="history-list" role="list"></ul>
+        <button id="load-more" type="button" class="btn-secondary" hidden>Load more</button>
       </div>
     </div>
 

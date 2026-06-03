@@ -381,3 +381,158 @@ textarea:focus {
   font-weight: 400;
   color: var(--muted);
 }
+
+/* ── Tab bar ── */
+.tab-bar {
+  display: flex;
+  gap: 2px;
+}
+
+.tab-btn {
+  padding: 4px 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.tab-btn:hover {
+  background: var(--card-bg);
+  color: var(--text);
+}
+.tab-btn.tab-active {
+  background: var(--card-bg);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ── History panel ── */
+#history-panel {
+  padding: 8px 16px 16px;
+}
+
+#history-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-item {
+  padding: 8px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.history-item:hover {
+  border-color: var(--primary);
+}
+.history-item:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.history-snippet {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#load-more {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* ── Bulk translation panel ── */
+#bulk-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.bulk-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#bulk-input {
+  width: 100%;
+  min-height: 120px;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#bulk-cancel {
+  margin-left: 0;
+}
+
+.bulk-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 1.2em;
+}
+
+#bulk-progress {
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+#bulk-cache-stats {
+  font-size: 0.8em;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+#bulk-status {
+  font-size: 0.8em;
+  color: var(--muted);
+  font-style: italic;
+  display: block;
+  min-height: 1.2em;
+}
+
+#bulk-results {
+  overflow-y: auto;
+  max-height: 300px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+#bulk-results p {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+#bulk-results p:last-child {
+  border-bottom: none;
+}
